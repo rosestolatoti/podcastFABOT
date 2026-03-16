@@ -1,0 +1,772 @@
+================================================================================
+FABOT PODCAST STUDIO - DOCUMENTAÇÃO COMPLETA DO SISTEMA
+================================================================================
+
+Versão: 1.0.0
+Data: 2026-03-15
+Stack: FastAPI (Python) + React + Zustand + Kokoro TTS + Groq LLM
+
+================================================================================
+1. ESTRUTURA GERAL DO PROJETO
+================================================================================
+
+fabot-studio/
+├── backend/                    # API FastAPI (Python)
+│   ├── main.py                # Entrada da aplicação FastAPI
+│   ├── config.py              # Configurações (variáveis de ambiente)
+│   ├── database.py            # Banco de dados SQLite + SQLAlchemy
+│   ├── models.py              # Modelos de banco (Job, File)
+│   ├── routers/               # Endpoints da API
+│   │   ├── jobs.py            # CRUD de jobs (criar, iniciar, status)
+│   │   ├── upload.py          # Upload de arquivos e texto
+│   │   └── health.py          # Health check dos serviços
+│   ├── services/             # Serviços internos
+│   │   ├── llm.py            # Integração com LLM (Groq, Gemini, Ollama)
+│   │   ├── tts_orchestrator.py # Kokoro TTS
+│   │   └── post_production.py # Processamento de áudio
+│   ├── workers/               # Workers assíncronos
+│   │   └── podcast_worker.py  # Processamento de podcast
+│   └── tests/                 # Testes
+│
+├── frontend/                   # Aplicação React (Vite)
+│   ├── src/
+│   │   ├── components/        # Componentes React
+│   │   │   ├── Header.jsx      # Cabeçalho com status dos serviços
+│   │   │   ├── InputPanel.jsx  # Painel de entrada (texto/arquivos)
+│   │   │   ├── EpisodeConfig.jsx # Configurações do episódio
+│   │   │   ├── RightPanel.jsx  # Painel direito (abas)
+│   │   │   ├── HistoryPanel.jsx # Histórico de episódios
+│   │   │   └── PDFViewer.jsx   # Visualizador de PDF
+│   │   ├── hooks/             # Custom hooks React
+│   │   │   ├── useHealthCheck.js # Verifica status dos serviços
+│   │   │   ├── useVoices.js    # Lista vozes disponíveis
+│   │   │   └── useJobStream.js # Streaming de eventos (SSE)
+│   │   ├── store/             # Estado global
+│   │   │   └── jobStore.js    # Zustand store
+│   │   ├── styles/
+│   │   │   └── tokens.css     # Design tokens
+│   │   ├── App.jsx            # Componente principal
+│   │   └── main.jsx           # Entrada React
+│   └── package.json
+│
+└── relatoriosfrontend/        # Relatórios de tarefas
+
+================================================================================
+2. FLUXO DE DADOS (DO FRONTEND AO BACKEND)
+================================================================================
+
+USUÁRIO COLE TEXTO -> FRONTEND -> API UPLOAD/PASTE -> CRIA JOB (PENDING)
+                                                        |
+                                                        v
+                              API JOBS/START <- CRIA JOB NO BANCO
+                                                        |
+                                                        v
+                              WORKER ASSÍNCRONO <- INICIA PROCESSAMENTO
+                                                        |
+                        +---------------+---------------+---------------+
+                        |               |               |               |
+                        v               v               v               v
+                   LEITURA       LLM (GROQ)       TTS (KOKORO)   POST-PROD
+                   (PENDING)   (LLM_PROCESSING) (TTS_PROCESSING) (DONE)
+                        |               |               |               |
+                        v               v               v               v
+                   PENDING -> READING -> SCRIPT_DONE -> DONE
+                                                        |
+                                                        v
+                              FRONTEND (POLLING) <- RETORNA AUDIO_PATH
+                                                        |
+                                                        v
+                              PLAYER EXIBE ÁUDIO
+
+================================================================================
+3. ENDPOINTS DA API (BACKEND)
+================================================================================
+
+BASE URL: http://localhost:8000
+
+──────────────────────────────────────────────────────────────────────────────
+HEALTH
+──────────────────────────────────────────────────────────────────────────────
+
+GET /health/
+  Retorna status de todos os serviços
+  Response:
+  {
+    "overall": "healthy",
+    "services": [
+      {"service": "kokoro", "status": "UP", "details": "Status: 200"},
+      {"service": "redis", "status": "UP", "details": null},
+      {"service": "disk", "status": "UP", "details": "35.0GB livres"},
+      {"service": "ollama", "status": "UP", "details": "Status: 200"}
+    ]
+  }
+
+──────────────────────────────────────────────────────────────────────────────
+UPLOAD
+──────────────────────────────────────────────────────────────────────────────
+
+POST /upload/paste
+  Envia texto copiado para criar job
+  Query Params:
+    - title: string
+    - text: string (mínimo 100 caracteres)
+    - llm_mode: string (default: "groq")
+    - voice_host: string (default: "pf_dora")
+    - podcast_type: string (default: "monologue")
+    - target_duration: int (default: 10)
+  Response:
+  {
+    "job_id": "uuid-aqui",
+    "status": "uploaded",
+    "char_count": 1234
+  }
+
+POST /upload/
+  Envia arquivo (PDF, DOCX, TXT)
+  Form Data:
+    - file: arquivo
+    - title: string
+    - llm_mode: string
+    - voice_host: string
+  Response:
+  {
+    "job_id": "uuid-aqui",
+    "status": "uploaded",
+    "char_count": 1234,
+    "text_hash": "hash-aqui"
+  }
+
+──────────────────────────────────────────────────────────────────────────────
+JOBS
+──────────────────────────────────────────────────────────────────────────────
+
+GET /jobs/history
+  Lista todos os jobs (histórico)
+  Query Params:
+    - limit: int (default: 20)
+  Response:
+  {
+    "jobs": [
+      {
+        "id": "uuid",
+        "title": "Título",
+        "status": "DONE|PENDING|FAILED",
+        "progress": 100,
+        "duration_seconds": 64.5,
+        "llm_mode": "groq",
+        "created_at": "2026-03-15T03:26:02.266794"
+      }
+    ]
+  }
+
+GET /jobs/{job_id}
+  Detalhes de um job específico
+  Response:
+  {
+    "id": "uuid",
+    "title": "Título",
+    "status": "DONE|PENDING|FAILED|READING|LLM_PROCESSING|TTS_PROCESSING",
+    "progress": 0-100,
+    "current_step": "Texto descritivo",
+    "script_json": "{...}",
+    "script_edited": false,
+    "audio_path": "data/output/.../final.mp3",
+    "duration_seconds": 64.5,
+    "error_message": null,
+    "llm_mode": "groq",
+    "voice_host": "pm_alex",
+    "created_at": "2026-03-15T03:26:02.266794"
+  }
+
+POST /jobs/{job_id}/start
+  Inicia o processamento de um job
+  Response:
+  {
+    "status": "processing",
+    "job_id": "uuid",
+    "result": {
+      "success": true,
+      "job_id": "uuid",
+      "audio_path": "data/output/.../final.mp3",
+      "duration": 64.454
+    }
+  }
+
+GET /jobs/{job_id}/stream
+  Streaming de eventos (SSE) para tempo real
+  Yield:
+  data: {"status": "READING", "progress": 5, "current_step": "..."}
+  data: {"status": "LLM_PROCESSING", "progress": 20, "current_step": "..."}
+  data: {"status": "DONE", "progress": 100, ...}
+
+================================================================================
+4. MODELOS DE BANCO DE DADOS
+================================================================================
+
+Tabela: jobs
+  - id: string (UUID, PK)
+  - title: string
+  - status: string (PENDING, READING, LLM_PROCESSING, TTS_PROCESSING, POST_PRODUCTION, DONE, FAILED)
+  - progress: integer (0-100)
+  - current_step: string
+  - script_json: text (JSON do roteiro)
+  - script_edited: boolean
+  - audio_path: string (caminho do MP3)
+  - duration_seconds: float
+  - error_message: string
+  - llm_mode: string (groq, gemini, ollama)
+  - voice_host: string (pm_alex, pf_dora, etc)
+  - voice_cohost: string
+  - podcast_type: string
+  - target_duration: integer
+  - depth_level: string
+  - created_at: datetime
+  - updated_at: datetime
+
+Tabela: files
+  - id: string (UUID, PK)
+  - job_id: string (FK)
+  - original_name: string
+  - file_type: string
+  - file_path: string
+  - extracted_text: text
+  - char_count: integer
+  - status: string
+
+================================================================================
+5. PROCESSAMENTO NO BACKEND (WORKER)
+================================================================================
+
+ARQUIVO: backend/workers/podcast_worker.py
+
+FUNÇÃO: process_podcast_job(job_data, job_id)
+
+ETAPAS DO PROCESSAMENTO:
+
+1. READING (progress: 5%)
+   - Lê o texto do banco (script_json)
+   - Ou extrai texto de PDF/DOCX
+
+2. LLM_PROCESSING (progress: 20-40%)
+   - Chama Groq API com o texto
+   - Modelo: llama-3.3-70b-versatile
+   - Gera roteiro em formato JSON:
+     {
+       "title": "Título",
+       "segments": [
+         {
+           "speaker": "pm_alex",
+           "text": "Texto do segmento",
+           "emotion": "neutral|enthusiastic|serious",
+           "pause_after_ms": 600
+         }
+       ]
+     }
+   - Salva no banco (script_json)
+
+3. TTS_PROCESSING (progress: 45-85%)
+   - Para cada segmento do roteiro
+   - Chama Kokoro TTS API
+   - Endpoint: https://api.kokoro.ai/v1/audio/speech
+   - Voz: pm_alex (PT-BR masculino)
+   - Gera arquivos MP3 individuais
+   -拼接todos em um arquivo único
+
+4. POST_PRODUCTION (progress: 85-100%)
+   - Normalização de áudio (LUFS)
+   - Aplicar filtros
+   - Mesclar intro/outro (música)
+   - Salvar arquivo final em data/output/
+
+================================================================================
+6. FRONTEND - COMPONENTES
+================================================================================
+
+ARQUIVO: frontend/src/components/InputPanel.jsx
+
+FUNCIONALIDADES:
+- two tabs: "Arquivos" e "Texto"
+- Drag & drop de arquivos (PDF, DOCX, TXT)
+- Contador de caracteres/palavras
+- Validação: mínimo 100 caracteres
+- Barra de progresso (quando processando)
+- Cronômetro
+- Estados: processamento, sucesso, erro
+
+ESTADOS:
+- files: array de arquivos
+- text: string do texto
+- isDragging: boolean
+- previewPdf: arquivo para visualização
+- startTime: timestamp de início
+- elapsedTime: segundos decorridos
+
+FUNÇÕES:
+- handleDrop(): processa arquivos arrastados
+- handleFileInput(): arquivos selecionados
+- viewPdf(): abre visualizador
+- handleGenerateScript(): gera só roteiro
+- handleGeneratePodcast(): gera podcast completo
+
+ARQUIVO: frontend/src/components/RightPanel.jsx
+
+ABAS:
+- Roteiro: exibe script_json editável
+- Progresso: barra de progresso + timeline
+- Player: player de áudio HTML5
+
+ARQUIVO: frontend/src/components/EpisodeConfig.jsx
+
+CONFIGURAÇÕES:
+- Tipo: Monólogo | Entrevista
+- Duração alvo: 5, 10, 15, 20, 30 min
+- Profundidade: Resumo rápido | Normal | Detalhado
+- Modo IA: groq, gemini, ollama
+- Voz do Host: pm_alex, pf_dora (PT-BR)
+- Estilo de fala: Normal, Animado, Sério
+- Música de introdução (opcional)
+
+================================================================================
+7. GERENCIAMENTO DE ESTADO (ZUSTAND)
+================================================================================
+
+ARQUIVO: frontend/src/store/jobStore.js
+
+ESTADOS GLOBAIS:
+- currentJobId: string | null
+- currentJob: object | null
+- sseConnected: boolean
+- sseError: string | null
+- services: { kokoro, redis, groq, backend }
+- availableVoices: array
+- ptbrVoices: array
+- jobHistory: array
+- activeTab: 'roteiro' | 'progresso' | 'player'
+- historyOpen: boolean
+- inputTab: 'arquivos' | 'texto'
+
+AÇÕES:
+- setCurrentJob(job)
+- setCurrentJobId(id)
+- setSSEConnected(connected)
+- setServices(services)
+- updateService(service, status)
+- setAvailableVoices(voices)
+- setJobHistory(history)
+- addToHistory(job)
+- removeFromHistory(jobId)
+- setActiveTab(tab)
+- setHistoryOpen(open)
+- setInputTab(tab)
+- reset()
+
+================================================================================
+8. FLUXO NO FRONTEND (App.jsx)
+================================================================================
+
+1. useEffect inicial:
+   - Carrega histórico via GET /jobs/history
+   - Atualiza jobStore.jobHistory
+
+2. handleSubmit(data):
+   a) Se texto (data.text.length >= 100):
+      - POST /upload/paste?params
+      - Recebe job_id
+   
+   b) Se arquivos (data.files.length > 0):
+      - POST /upload/ (FormData)
+      - Recebe job_id
+   
+   c) Se job criado:
+      - GET /jobs/{job_id} (busca status)
+      - setCurrentJob(job)
+      
+      d) Se type === 'podcast':
+         - POST /jobs/{job_id}/start (inicia processamento)
+         - setActiveTab('progresso')
+         - Inicia polling a cada 2 segundos:
+           - GET /jobs/{job_id}
+           - setCurrentJob(resposta)
+           - Se DONE ou FAILED, para polling
+
+3. InputPanel exibe:
+   - Barra de progresso (currentJob.progress)
+   - Cronômetro
+   - current_step (etapa atual)
+   - Estados: processing, done, failed
+
+================================================================================
+9. HOOKS PERSONALIZADOS
+================================================================================
+
+useHealthCheck.js
+- Verifica /health/ a cada 30 segundos
+- Atualiza store.services
+- Indicadores visuais no Header
+
+useVoices.js
+- Busca vozes disponíveis
+- Filtra vozes PT-BR (pm_*, pf_*)
+- Atualiza store.availableVoices
+
+useJobStream.js
+- Conecta via EventSource em /jobs/{job_id}/stream
+- Recebe atualizações em tempo real
+- Atualiza store.currentJob
+- Reconexão automática com retry
+
+================================================================================
+10. VISUALIZADOR DE PDF
+================================================================================
+
+ARQUIVO: frontend/src/components/PDFViewer.jsx
+
+BIBLIOTECA: react-pdf (usa pdfjs-dist)
+
+FUNCIONALIDADES:
+- Renderiza PDF no navegador
+- Zoom: +, -, reset (50% - 300%)
+- Navegação: anterior, próxima, página específica
+- Texto selecionável (TextLayer)
+- Anotações (AnnotationLayer)
+
+================================================================================
+11. PROBLEMAS CONHECIDOS E SOLUÇÕES
+================================================================================
+
+PROBLEMA: 404 ao chamar /upload/paste
+CAUSA: Rota estava com params no lugar errado no axios
+SOLUÇÃO: Usar URLSearchParams para construir query string
+
+PROBLEMA: Job não inicia automaticamente
+CAUSA: Frontend não chamava /jobs/{id}/start
+SOLUÇÃO: Adicionar polling para atualizar progresso
+
+PROBLEMA: Barra de progresso travada em 0%
+CAUSA: API retorna progresso mas frontend não atualiza
+SOLUÇÃO: Polling a cada 2 segundos após iniciar job
+
+PROBLEMA: Rota /history conflicts com /{job_id}
+CAUSA: FastAPI interpreta "history" como job_id
+SOLUÇÃO: Colocar /history ANTES de /{job_id} no código
+
+================================================================================
+12. ARQUITETURA DE VOZES (KOKORO TTS)
+================================================================================
+
+Vozes PT-BR disponíveis:
+- pm_alex: Masculino (usar para host)
+- pf_dora: Feminino (usar para co-host)
+
+Formatos suportados:
+- MP3 (principal)
+- WAV
+
+Endpoint: https://api.kokoro.ai/v1/audio/speech
+Método: POST
+Body:
+{
+  "model": "kokoro",
+  "input": "Texto para converter",
+  "voice": "pm_alex",
+  "response_format": "mp3"
+}
+
+================================================================================
+13. VARIÁVEIS DE AMBIENTE (.env)
+================================================================================
+
+# Backend
+DATABASE_URL=sqlite:///./backend/db/fabot.db
+UPLOAD_DIR=./data/uploads
+OUTPUT_DIR=./data/output
+LOG_LEVEL=INFO
+
+# APIs
+GROQ_API_KEY=sk-...
+KOKORO_API_KEY=...
+GEMINI_API_KEY=...
+OLLAMA_BASE_URL=http://localhost:11434
+
+# Redis
+REDIS_URL=redis://localhost:6379
+
+# CORS
+CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+
+================================================================================
+14. COMO TESTAR O SISTEMA
+================================================================================
+
+1. INICIAR BACKEND:
+   cd /home/fabiorjvr/Área\ de\ trabalho/ELEVENLABS2/fabot-studio
+   PYTHONPATH=/home/fabiorjvr/Área\ de\ trabalho/ELEVENLABS2/fabot-studio
+   source .venv/bin/activate
+   python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+2. INICIAR FRONTEND:
+   cd /home/fabiorjvr/Área\ de\ trabalho/ELEVENLABS2/fabot-studio/frontend
+   npm run dev
+
+3. TESTAR API:
+   # Health check
+   curl http://localhost:8000/health/
+   
+   # Criar job com texto
+   curl -X POST "http://localhost:8000/upload/paste?title=Teste&text=Este+e+um+teste+de+texto+muito+longo+para+testar+o+backend+do+fabot+podcast+studio+com+mais+de+cem+caracteres+de+conteudo+valido+para+processamento+de+texto+para+geracao+de+podcast+utilizando+inteligencia+artificial+groq+e+kokoro+tts"
+   
+   # Iniciar processamento
+   curl -X POST "http://localhost:8000/jobs/{job_id}/start"
+   
+   # Ver status
+   curl "http://localhost:8000/jobs/{job_id}"
+   
+   # Ver histórico
+   curl "http://localhost:8000/jobs/history"
+
+4. ACESSAR FRONTEND:
+   http://localhost:3000
+
+================================================================================
+15. PRÓXIMOS PASSOS / MELHORIAS
+================================================================================
+
+- [ ] Corrigir streaming SSE (atualmente usando polling)
+- [ ] Adicionar cancelamento de jobs
+- [ ] Melhorar visualizador de PDF (carregamento lazy)
+- [ ] Adicionar preview de áudio antes de gerar
+- [ ] Implementar edição de roteiro com preview
+- [ ] Adicionar testes unitários
+- [ ] Dockerizar aplicação
+- [ ] Implementar autenticação
+- [ ] Adicionar internacionalização (i18n)
+
+================================================================================
+FIM DO DOCUMENTO
+================================================================================
+
+
+================================================================================
+16. CORREÇÕES FEITAS EM 2026-03-15
+================================================================================
+
+PROBLEMA ORIGINAL:
+O endpoint /jobs/{id}/start era SÍNCRONO e BLOQUEAVA o servidor HTTP.
+Quando o frontend chamava /start, o backend processava tudo (LLM + TTS + 
+pós-produção) dentro da própria requisição HTTP antes de responder. O polling 
+do frontend ficava fazendo GET /jobs/{id} a cada 2 segundos, mas o backend 
+estava travado processando e não respondia ao polling até terminar. Por isso 
+o progresso ficava em 0% — ele só ia para 100% quando o /start finalmente 
+retornava.
+
+SOLUÇÃO IMPLEMENTADA:
+
+--------------------------------------------------------------------
+CORREÇÃO 1: BackgroundTasks no /start
+--------------------------------------------------------------------
+ARQUIVO: backend/routers/jobs.py
+
+ALTERAÇÕES:
+1. Adicionado import: BackgroundTasks do FastAPI
+2. Adicionado import: SessionLocal do database
+3. Criada função wrapper: run_podcast_job_background(job_id)
+   - Cria sua própria sessão DB
+   - Executa o processamento em loop de eventos separado
+   - Trata erros e atualiza status para FAILED se necessário
+
+4. Modificado endpoint /start:
+   ANTES (síncrono):
+   ```python
+   @router.post("/{job_id}/start")
+   async def start_job(job_id: str, db: Session = Depends(get_db)):
+       result = await process_podcast_job({}, job_id)  # BLOQUEIA ATÉ TERMINAR
+       return {"status": "processing", "job_id": job_id, "result": result}
+   ```
+
+   DEPOIS (assíncrono):
+   ```python
+   @router.post("/{job_id}/start")
+   async def start_job(job_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+       job.status = "READING"
+       job.progress = 5
+       job.current_step = "Processando..."
+       db.commit()
+       
+       background_tasks.add_task(run_podcast_job_background, job_id)
+       
+       return {"status": "queued", "job_id": job_id}  # RETORNA IMEDIATAMENTE
+   ```
+
+RESULTADO:
+- O endpoint agora retorna em MILISSEGUNDOS
+- O processamento roda em background
+- O polling do frontend funciona porque o servidor HTTP não está mais bloqueado
+
+TESTE REALIZADO:
+```bash
+# 1. Criar job
+curl -X POST "http://localhost:8000/upload/paste?title=Teste&text=..."
+
+# 2. Iniciar - RETORNA IMEDIATAMENTE
+curl -X POST "http://localhost:8000/jobs/{job_id}/start"
+# Resultado: {"status":"queued","job_id":"..."}
+
+# 3. Poll mostra progresso advancing:
+#   - Status: LLM_PROCESSING, Progress: 20%
+#   - Status: TTS_PROCESSING, Progress: 45%  
+#   - Status: DONE, Progress: 100%
+```
+
+--------------------------------------------------------------------
+CORREÇÃO 2: Endpoint /cancel
+--------------------------------------------------------------------
+ARQUIVO: backend/routers/jobs.py
+
+NOVO ENDPOINT:
+```python
+@router.post("/{job_id}/cancel")
+async def cancel_job(job_id: str, db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job não encontrado")
+    
+    if job.status in ["DONE", "FAILED"]:
+        raise HTTPException(status_code=400, detail=f"Job já finalizado: {job.status}")
+    
+    job.status = "FAILED"
+    job.error_message = "Cancelado pelo usuário"
+    db.commit()
+    
+    return {"status": "cancelled", "job_id": job_id}
+```
+
+FUNÇÃO:
+- Permite cancelar jobs em andamento
+- Atualiza status para FAILED
+- Define mensagem de erro "Cancelado pelo usuário"
+- Retorna erro se job já estiver finalizado
+
+--------------------------------------------------------------------
+CORREÇÃO 3: Endpoint /delete
+--------------------------------------------------------------------
+ARQUIVO: backend/routers/jobs.py
+
+NOVO ENDPOINT:
+```python
+@router.delete("/{job_id}")
+async def delete_job(job_id: str, db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job não encontrado")
+    
+    db.delete(job)
+    db.commit()
+    
+    return {"deleted": job_id}
+```
+
+FUNÇÃO:
+- Remove job do banco de dados
+- Usado pelo botão de lixeira no HistoryPanel
+
+--------------------------------------------------------------------
+ARQUIVO: frontend/src/App.jsx
+--------------------------------------------------------------------
+MUDANÇAS NO FLUXO:
+
+1. handleSubmit foi atualizado para:
+   a) Criar job via /upload/paste
+   b) Obter job_id
+   c) GET /jobs/{job_id} para buscar status inicial
+   d) POST /jobs/{job_id}/start (retorna imediatamente)
+   e) Iniciar polling a cada 2 segundos para atualizar progresso
+
+2. O polling verifica constantemente:
+   - GET /jobs/{job_id}
+   - setCurrentJob(resposta)
+   - Para polling quando status for DONE ou FAILED
+
+--------------------------------------------------------------------
+ARQUIVO: frontend/src/components/InputPanel.jsx
+--------------------------------------------------------------------
+MUDANÇAS:
+
+1. Adicionado useEffect para controlar timer:
+   - Inicia cronômetro quando status muda para processando
+   - Para timer quando job termina (DONE/FAILED)
+   - Zera quando novo job começa
+
+2. Adicionada barra de progresso visual:
+   - Mostra percentage (0-100%)
+   - Mostra etapa atual (current_step)
+   - Mostra cronômetro (MM:SS)
+
+3. Estados exibidos:
+   - Processando: barra de progresso + timer
+   - Sucesso: mensagem verde + duração
+   - Erro: mensagem vermelha + erro
+
+--------------------------------------------------------------------
+COMO TESTAR O SISTEMA CORRIGIDO
+--------------------------------------------------------------------
+
+1. INICIAR BACKEND:
+   cd /home/fabiorjvr/Área\ de\ trabalho/ELEVENLABS2/fabot-studio
+   PYTHONPATH=/home/fabiorjvr/Área\ de\ trabalho/ELEVENLABS2/fabot-studio
+   source .venv/bin/activate
+   python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+2. INICIAR FRONTEND:
+   cd /home/fabiorjvr/Área\ de\ trabalho/ELEVENLABS2/fabot-studio/frontend
+   npm run dev
+
+3. ACESSAR: http://localhost:3000
+
+4. FLUXO NOVO (deve funcionar):
+   a) Vá para aba "Texto"
+   b) Cole um texto com mais de 100 caracteres
+   c) Clique em "Gerar Podcast"
+   d) Observe a barra de progresso avançando (0% -> 20% -> 45% -> 100%)
+   e) Observe o cronômetro marcando tempo
+   f) Quando concluído, verá mensagem de sucesso
+
+5. TESTE MANUAL VIA CURL:
+   # Criar job
+   JOB=$(curl -s -X POST "http://localhost:8000/upload/paste?title=Teste&text=Python+e+uma+linguagem+de+programacao+poderosa+...")
+   JOB_ID=$(echo $JOB | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
+   
+   # Iniciar (retorna imediatamente)
+   curl -s -X POST "http://localhost:8000/jobs/$JOB_ID/start"
+   # Esperado: {"status":"queued","job_id":"..."}
+   
+   # Ver progresso (irá advancing)
+   sleep 5 && curl -s "http://localhost:8000/jobs/$JOB_ID"
+   # Esperado: LLM_PROCESSING, 20%
+   
+   sleep 15 && curl -s "http://localhost:8000/jobs/$JOB_ID"
+   # Esperado: TTS_PROCESSING, 45%
+   
+   sleep 45 && curl -s "http://localhost:8000/jobs/$JOB_ID"
+   # Esperado: DONE, 100%
+
+--------------------------------------------------------------------
+ENDPOINTS ATUALIZADOS
+--------------------------------------------------------------------
+
+POST /jobs/{job_id}/start
+- Antes: Síncrono, bloqueava até terminar
+- Depois: Retorna {"status": "queued"} imediatamente, processa em background
+
+POST /jobs/{job_id}/cancel
+- NOVO ENDPOINT
+- Cancela job em andamento
+- Retorna {"status": "cancelled", "job_id": "..."}
+
+DELETE /jobs/{job_id}
+- NOVO ENDPOINT  
+- Remove job do banco
+- Retorna {"deleted": "job_id"}
+
+================================================================================
+FIM DAS CORREÇÕES
+================================================================================

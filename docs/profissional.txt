@@ -1,0 +1,380 @@
+FABOT Podcast Studio — Prompt Mestre em 15 Tasks
+
+Contexto Geral
+Construir o FABOT Podcast Studio: aplicação web single-page com aparência de software desktop profissional. Fundo branco, tipografia preta, sem gradientes, sem sombras excessivas, sem animações desnecessárias. Visual inspirado em DAWs e IDEs profissionais (Reaper, Cursor, Linear). Stack: React + FastAPI + SQLite + ARQ/Redis + Kokoro local.
+
+TASK 01 — Estrutura Base do Projeto
+Criar a estrutura de diretórios completa do monorepo:
+fabot-studio/
+├── backend/
+│   ├── main.py
+│   ├── config.py
+│   ├── models.py
+│   ├── database.py
+│   ├── routers/
+│   │   ├── jobs.py
+│   │   ├── upload.py
+│   │   └── health.py
+│   ├── services/
+│   │   ├── ingestor.py
+│   │   ├── llm.py
+│   │   ├── script_builder.py
+│   │   ├── tts_orchestrator.py
+│   │   └── post_production.py
+│   ├── workers/
+│   │   └── podcast_worker.py
+│   └── utils/
+│       ├── audio.py
+│       ├── text_cleaner.py
+│       └── logger.py
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   ├── store/
+│   │   └── App.jsx
+│   └── package.json
+├── docker-compose.yml
+└── .env.example
+config.py deve centralizar todos os paths, URLs e constantes. Nenhum outro arquivo pode ter path hardcoded. Usar python-dotenv. O .env.example deve documentar cada variável com comentário explicando o que faz.
+
+TASK 02 — Backend: Modelos e Banco de Dados
+Criar models.py com SQLAlchemy e database.py com SQLite.
+Tabela jobs:
+
+id UUID primary key
+title string
+status enum: PENDING | READING | LLM_PROCESSING | SCRIPT_DONE | TTS_QUEUED | TTS_PROCESSING | POST_PRODUCTION | DONE | FAILED
+progress integer 0-100
+current_step string (descrição humana do que está acontecendo agora)
+script_json TEXT (roteiro serializado em JSON)
+script_edited boolean (usuário editou o roteiro manualmente?)
+audio_path string nullable
+script_path string nullable
+duration_seconds integer nullable
+llm_mode string (local/groq/gemini)
+voice_host string
+voice_cohost string nullable
+podcast_type string (monologue/cohost/interview)
+target_duration integer (minutos)
+depth_level string (quick/normal/detailed)
+error_message TEXT nullable
+created_at datetime
+updated_at datetime
+
+Tabela files:
+
+id UUID
+job_id FK para jobs
+original_name string
+file_type string (pdf/docx/txt/paste)
+file_path string
+extracted_text TEXT
+char_count integer
+status string (pending/extracted/failed)
+
+Migrations com Alembic. Script init_db.py que cria tudo do zero.
+
+TASK 03 — Backend: Ingestão e Limpeza de Texto
+Criar services/ingestor.py responsável por extrair texto de qualquer fonte.
+Requisitos:
+
+PDF: usar pdfplumber como primário, PyPDF2 como fallback. Após extração, detectar e remover: headers/footers repetidos (comparar primeiras e últimas 3 linhas de cada página), referências bibliográficas (regex para padrões [1], [Author, 2023], notas de rodapé numeradas), numeração de figuras e tabelas.
+DOCX: usar python-docx, preservar hierarquia de headings como separadores de seção.
+TXT: limpeza simples de encoding e normalização de quebras de linha.
+Texto colado: mesma limpeza do TXT.
+
+Validações obrigatórias:
+
+Verificar magic bytes do arquivo, não só extensão.
+Rejeitar arquivos acima de 50MB.
+Detectar PDFs escaneados (sem texto extraível) e retornar erro descritivo, não silêncio.
+Após extração, calcular hash SHA256 do texto limpo para cache de LLM posterior.
+
+Criar utils/text_cleaner.py com função clean_for_tts(text) que: remove emojis, substitui símbolos matemáticos por extenso em pt-BR, expande siglas conhecidas, normaliza números para forma falada ("1200" → "mil e duzentos"), remove URLs.
+
+TASK 04 — Backend: Orquestração LLM
+Criar services/llm.py com três providers intercambiáveis via interface comum.
+Interface base:
+pythonclass LLMProvider:
+    async def generate_script(self, text, config) -> dict
+    async def health_check() -> bool
+Providers:
+
+GroqProvider: modelo llama-3.1-8b-instant. Implementar backoff exponencial (1s, 2s, 4s) em rate limit. Cache de resultado usando hash do texto em SQLite — se mesmo texto + mesma config já foi processado, retorna cached sem chamar API.
+GeminiProvider: modelo gemini-1.5-flash. Mesma interface, mesmo cache.
+OllamaProvider: endpoint local configurável. Health check antes de usar.
+
+O prompt de geração de roteiro é o coração do sistema. Deve ser um template em arquivo separado prompts/script_template.py com:
+
+System prompt definindo persona de roteirista de podcast educacional brasileiro
+Regras explícitas: máximo 3 frases por fala, cada fala máximo 25 palavras, transições naturais entre falantes, uso obrigatório de marcadores [PAUSA_CURTA] e [PAUSA_LONGA] em posições específicas
+Instruções de output: retornar JSON estruturado com array de objetos {speaker, text, emotion, pause_after_ms}
+Few-shot: 3 exemplos de falas bem formatadas e 2 exemplos de falas ruins para evitar
+Instrução de duração: calcular número de falas baseado em palavras_por_minuto=140 e target_duration
+
+Não usar f-string para montar o prompt. Usar Jinja2 para o template do prompt — facilita manutenção futura.
+
+TASK 05 — Backend: Orquestrador TTS
+Criar services/tts_orchestrator.py. Este é o módulo mais crítico para qualidade de áudio.
+Pipeline por fala:
+
+Receber objeto {speaker, text, emotion, pause_after_ms} do roteiro
+Rodar clean_for_tts() no texto
+Se texto > 300 chars, quebrar em chunks por sentença (nunca cortar no meio de frase)
+Para cada chunk: chamar Kokoro com retry (3 tentativas, backoff 2s/4s/8s)
+Se chunk falhar após 3 tentativas: logar com índice exato da fala, continuar com silêncio proporcional
+Juntar chunks da mesma fala com crossfade de 40ms
+Aplicar pausa correta após a fala baseada em pause_after_ms
+
+Paralelismo controlado:
+
+Processar máximo 3 falas simultaneamente com asyncio.Semaphore(3)
+Manter ordem original após processamento paralelo (usar índice)
+Logar tempo de cada fala para identificar gargalos
+
+Pausas inteligentes:
+
+Mesma voz continuando: 250ms
+Troca de falante: 700ms
+Após marcador [PAUSA_CURTA]: 600ms
+Após marcador [PAUSA_LONGA]: 1400ms
+Início e fim do episódio: 2000ms
+
+Crossfade entre todas as junções: 30ms. Sem isso haverá cliques audíveis entre segmentos.
+
+TASK 06 — Backend: Pós-Produção
+Criar services/post_production.py. Único lugar no sistema onde se toca no áudio final consolidado.
+Pipeline em ordem fixa:
+
+Normalização RMS para -16 LUFS equivalente (calculado sobre o áudio inteiro, não por segmento)
+Compressão dinâmica: threshold -20dB, ratio 2.5:1, attack 20ms, release 150ms
+High-pass filter a 80Hz (remove rumble de CPU/ambiente que o Kokoro às vezes gera)
+Limiter a -1.0 dBFS
+Fade in 1.5s, fade out 3s
+Se existir vinheta configurada: overlay nos primeiros segundos com ducking automático (-12dB durante a fala)
+Export MP3 192kbps, stereo, 44100Hz
+
+Regra crítica: a normalização acontece UMA VEZ, aqui, no áudio final. Nenhum outro módulo normaliza áudio. audio_utils.py não deve ter normalize().
+Gerar também arquivo de log de produção {job_id}_production.json com: duração final, LUFS medido, número de falas, número de falhas de TTS, vozes usadas, tempo total de geração.
+
+TASK 07 — Backend: Worker e Fila
+Criar workers/podcast_worker.py usando ARQ com Redis.
+Função principal process_podcast_job(ctx, job_id):
+
+Cada etapa do pipeline atualiza job.status e job.progress no banco
+Cada etapa é envolta em try/except individual — falha em pós-produção não apaga o roteiro já gerado
+Checkpointing: se job já tem script_json preenchido e script_edited=True, pular etapas de LLM e ir direto para TTS
+Logar início e fim de cada etapa com timestamp
+
+Mapeamento de progresso:
+
+READING: 0→15%
+LLM_PROCESSING: 15→40%
+SCRIPT_DONE: 40% (pausa — aguarda possível edição do usuário)
+TTS_PROCESSING: 40→85% (atualiza a cada fala gerada: 40 + (falas_geradas/total_falas * 45))
+POST_PRODUCTION: 85→95%
+DONE: 100%
+
+Criar endpoint SSE /jobs/{id}/stream que faz polling no banco a cada 800ms e envia eventos com {status, progress, current_step, script_json}. Não usar WebSocket — SSE é suficiente e mais simples.
+
+TASK 08 — Backend: API Endpoints
+Criar os routers com FastAPI.
+routers/upload.py:
+
+POST /upload — recebe multipart/form-data com arquivos + configurações do job. Valida magic bytes. Cria registro no banco. Retorna job_id.
+POST /paste — recebe JSON com texto colado + configurações. Cria job. Retorna job_id.
+
+routers/jobs.py:
+
+POST /jobs/{id}/start — enfileira job no ARQ. Muda status para PENDING.
+POST /jobs/{id}/start-tts — inicia apenas o TTS (quando usuário editou roteiro). Só funciona se status for SCRIPT_DONE.
+GET /jobs/{id}/stream — SSE de progresso
+GET /jobs/{id}/result — retorna paths de download quando DONE
+GET /jobs/{id}/script — retorna script_json atual
+PUT /jobs/{id}/script — salva edição do roteiro, marca script_edited=True
+GET /jobs/history — lista todos os jobs com status, duração, data
+
+routers/health.py:
+
+GET /health — verifica: Kokoro (request para /health), Redis (ping), espaço em disco (mínimo 500MB), Ollama se configurado. Retorna JSON com status de cada serviço.
+
+CORS configurado para aceitar apenas localhost:3000 em desenvolvimento.
+
+TASK 09 — Frontend: Setup e Design System
+Setup React com Vite. Instalar: zustand (state), react-query (server state), axios (HTTP).
+Design System — regras absolutas:
+
+Background: #FFFFFF
+Superfícies (painéis, cards): #F8F8F8
+Bordas: 1px solid #E0E0E0
+Texto primário: #0A0A0A
+Texto secundário: #555555
+Texto desabilitado: #AAAAAA
+Cor de ação única: #0A0A0A (preto — botões primários, foco, seleção ativa)
+Estado de erro: #CC0000
+Estado de sucesso: #007A00
+Estado de processamento: #0052CC
+Zero gradientes. Zero sombras box-shadow exceto 0 1px 3px rgba(0,0,0,0.08) máximo.
+Fonte: Inter (system-ui fallback)
+Tamanhos: 11px (label), 13px (body), 15px (título seção), 20px (título principal)
+Border-radius: 4px em tudo. Sem bordas arredondadas excessivas.
+Botão primário: fundo #0A0A0A, texto branco, sem border-radius > 4px
+Botão secundário: fundo transparente, borda 1px solid #0A0A0A, texto #0A0A0A
+
+Layout geral: header fixo 48px + coluna esquerda 380px fixa + coluna direita restante.
+
+TASK 10 — Frontend: Coluna Esquerda (Entrada)
+Construir o painel de entrada completo.
+Componente UploadPanel:
+
+Duas abas: "Arquivos" e "Texto". Abas como tabs simples com sublinhado ativo, sem fundo colorido.
+Aba Arquivos: área de drag-and-drop com borda 2px dashed #E0E0E0. Ao arrastar arquivo, borda muda para 2px dashed #0A0A0A. Ícone de upload minimalista SVG, texto "Arraste PDF, DOCX ou TXT". Lista de arquivos adicionados: nome truncado + tamanho + botão × para remover.
+Aba Texto: <textarea> que ocupa todo o espaço disponível, sem resize manual. Contador {chars} caracteres · {palavras} palavras · ~{minutos_estimados} min de podcast atualizado em tempo real. Cálculo: palavras ÷ 140 × fator_profundidade.
+
+Componente EpisodeConfig:
+
+Seção com título "Configuração do Episódio" em 11px uppercase tracking-wide
+Tipo: 3 radio buttons inline — Monólogo / Co-hosts / Entrevista
+Duração alvo: segmented control com 5 / 10 / 15 / 20 min
+Profundidade: 3 opções — Resumo / Normal / Detalhado
+Modo IA: dropdown com indicador de status ao lado (verde = disponível, cinza = offline) — verificar via /health
+Voz host: dropdown com nomes das vozes
+Voz co-host: aparece apenas se tipo ≠ Monólogo
+Estilo: dropdown — Normal / Explicativo / Motivacional / Formal / Descontraído
+
+Dois botões na base:
+
+"Gerar Roteiro" (secundário)
+"Gerar Podcast Completo" (primário, full-width)
+
+
+TASK 11 — Frontend: Coluna Direita — Editor de Roteiro
+Construir o editor de roteiro como componente central da coluna direita.
+Componente ScriptEditor:
+
+Quando não há roteiro: estado vazio com texto "O roteiro aparecerá aqui após a geração" centralizado em #AAAAAA
+Quando há roteiro: lista de blocos de fala, cada bloco é uma linha editável
+Cada bloco contém:
+
+Badge do falante (HOST / CO-HOST) em 10px uppercase, fundo #F0F0F0, borda 1px solid #E0E0E0
+Texto da fala em <textarea> inline que expande com o conteúdo (auto-resize)
+Indicador de emoção em texto pequeno à direita: neutral · 0.95x
+Botão de preview de áudio deste bloco isolado (ícone play pequeno) — chama TTS apenas para aquele texto
+Marcadores de pausa renderizados como separadores visuais finos entre blocos, com label [pausa curta] ou [pausa longa] em #AAAAAA
+
+
+Barra superior do editor: "X falas · ~Y minutos estimados · Editado / Não editado"
+Botão "Gerar Áudio com Este Roteiro" aparece fixo na base da coluna direita quando status = SCRIPT_DONE
+
+Qualquer edição no textarea: debounce de 800ms → PUT /jobs/{id}/script automático → badge "Salvo" aparece por 2s.
+
+TASK 12 — Frontend: Painel de Progresso e Player
+Componente ProgressPanel:
+
+Timeline vertical com os 5 passos do pipeline
+Cada passo: ícone de status (círculo vazio = pending, spinner = ativo, check = done, X = failed) + label + tempo decorrido quando ativo
+Barra de progresso linear fina (2px) abaixo da timeline, cor #0A0A0A, sem animação de pulso
+Texto de status atual: current_step do SSE em 13px, #555555
+Estimativa de tempo restante calculada localmente: (100 - progress) / velocidade_média_últimos_30s
+
+Componente AudioPlayer:
+
+Aparece apenas quando status = DONE
+Player HTML5 nativo estilizado com CSS: sem gradiente, controls visíveis, fundo #F8F8F8
+Abaixo do player: duração exata, tamanho do arquivo, modo IA usado, data de geração
+Dois botões: "Baixar MP3" e "Baixar Roteiro TXT" — ambos secundários, lado a lado
+
+Componente HistoryPanel:
+
+Lista compacta de episódios anteriores em tabela simples: título / data / duração / modo IA / status
+Clicar em um episódio abre seus dados no painel principal
+Máximo 20 itens, sem paginação na v1
+
+
+TASK 13 — Frontend: Estado Global e SSE
+Criar store/jobStore.js com Zustand.
+Estado:
+javascript{
+  currentJob: null,        // job completo atual
+  isConnected: false,      // SSE conectado
+  services: {},            // resultado do /health
+  history: [],             // lista de jobs passados
+}
+Hook useJobProgress(jobId):
+
+Abre conexão SSE para /jobs/{id}/stream
+Ao receber evento: atualiza currentJob no store
+Reconecta automaticamente se SSE cair (máximo 5 tentativas, backoff 1s/2s/4s/8s/16s)
+Fecha conexão quando status = DONE ou FAILED
+Expõe: {status, progress, currentStep, script, audioUrl}
+
+Hook useHealthCheck():
+
+Polling para /health a cada 30 segundos
+Resultado disponível no store como services
+Usado pelo dropdown de modo IA para mostrar disponibilidade em tempo real
+
+Toda comunicação HTTP via React Query com retry automático em erros 5xx. Erros 4xx não fazem retry — mostrar mensagem de erro direto.
+
+TASK 14 — Docker e Inicialização
+Criar docker-compose.yml com os seguintes serviços:
+yamlservices:
+  backend:      # FastAPI na porta 8000
+  worker:       # ARQ worker (mesmo imagem do backend, comando diferente)
+  redis:        # Redis 7 Alpine, sem senha em dev
+  frontend:     # Nginx servindo build do React na porta 3000
+  kokoro:       # ghcr.io/remsky/kokoro-fastapi-cpu:v0.2.2 na porta 8880
+Volumes:
+
+./data/uploads → backend /app/uploads
+./data/output → backend /app/output
+./data/db → backend /app/db (SQLite)
+
+Script start.sh:
+
+Verifica se Docker está rodando
+Cria pastas data/uploads, data/output, data/db se não existirem
+Copia .env.example para .env se .env não existir
+Roda docker compose up -d
+Aguarda health check de cada serviço (timeout 60s)
+Abre browser em localhost:3000
+Imprime resumo: quais serviços estão UP/DOWN
+
+Script stop.sh: docker compose down com confirmação.
+.env.example deve ter: GROQ_API_KEY, GEMINI_API_KEY, KOKORO_URL, REDIS_URL, DATABASE_PATH, OUTPUT_DIR, UPLOAD_DIR, MAX_UPLOAD_MB, DEFAULT_LLM_MODE.
+
+TASK 15 — Qualidade de Áudio: Regras Finais e Validação
+Esta task não é código novo — é revisão e enforcement das regras de qualidade em todo o sistema.
+Checklist a verificar em cada arquivo relevante:
+tts_orchestrator.py:
+
+ Normalização ausente (apenas post_production.py normaliza)
+ Crossfade de 30ms em toda junção de segmentos
+ Pausas diferenciadas por contexto (troca de voz vs mesmo falante)
+ Retry com backoff em toda chamada ao Kokoro
+ Sem abreviações textuais no texto enviado ao Kokoro (vc, pq, tb, etc.)
+
+post_production.py:
+
+ Pipeline na ordem: RMS norm → compressão → high-pass → limiter → fade → vinheta → export
+ Export sempre em 192kbps, 44100Hz, stereo
+ Geração de _production.json com metadados do episódio
+
+script_builder.py:
+
+ Falas máximo 25 palavras
+ Máximo 3 frases por fala
+ Marcadores de pausa em JSON, não inline no texto
+ Nenhuma abreviação no texto gerado
+
+roteiro_processor.py (herdado):
+
+ Remover dicionário de contrações completamente
+ [sorrindo] não injeta palavras no texto — gera pausa de 400ms no JSON
+ Marcadores removidos do texto antes de enviar ao Kokoro
+
+Teste de aceitação de qualidade: gerar episódio de 5 minutos e verificar: sem cliques audíveis nas junções, volume consistente entre host e co-host, pausas naturais entre falantes, sem artefatos no início/fim de cada fala, LUFS final entre -18 e -14.
+
+
+Ordem de implementação: Tasks 01→02→03→07→08 (backend funcional mínimo) → 09→10→13 (frontend mínimo com upload) → 04→05→06 (pipeline de qualidade) → 11→12 (editor e player) → 14 (Docker) → 15 (auditoria final). Nunca pular a Task 15 — é a diferença entre TTS amador e podcast profissional.

@@ -1,0 +1,70 @@
+.app {
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.main-layout {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+.main-layout.three-columns {
+  gap: 0;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-default);
+  overflow: hidden;
+  position: relative;
+}
+
+.column-input {
+  width: 380px;
+  flex-shrink: 0;
+}
+
+.column-script {
+  flex: 1;
+  min-width: 300px;
+}
+
+.column-player {
+  width: 320px;
+  flex-shrink: 0;
+}
+
+/* Resizer */
+.resizer {
+  width: 4px;
+  background: transparent;
+  cursor: col-resize;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 10;
+}
+
+.resizer:hover {
+  background: var(--border-focus);
+}
+
+.resizer-1 {
+  left: 280px;
+}
+
+.resizer-2 {
+  left: calc(280px + 100%);
+}
+
+.column-script .resizer-2 {
+  left: auto;
+  right: 280px;
+}

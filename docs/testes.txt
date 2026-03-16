@@ -1,0 +1,148 @@
+Veredicto Geral
+O backend está funcionalmente completo no papel, mas nunca foi executado uma única vez. Isso é o dado mais importante do relatório consolidado. Todas as correções foram feitas no código, mas nenhuma foi validada em runtime. Partir para o frontend agora seria construir sobre fundação não testada.
+
+O que o relatório consolidado acerta
+A priorização das correções foi correta. Cache no Redis, Pydantic validation, pyloudnorm, Dockerfiles — tudo isso era bloqueante e foi resolvido. O checklist final está honesto sobre o que foi feito.
+A admissão mais importante está na última seção: "Não testamos na prática — Todos os arquivos foram criados mas não houve execução real." Isso é o ponto central de tudo que vem a seguir.
+
+Riscos reais que o relatório minimiza
+Import circular é provável, não apenas possível
+O relatório coloca isso como "possível mas não testado". Na prática, a arquitetura criada tem alta probabilidade de import circular:
+podcast_worker.py
+  → services/llm.py
+    → config.py
+  → services/tts_orchestrator.py
+    → utils/text_cleaner.py
+  → services/post_production.py
+    → utils/audio.py
+Se main.py importa qualquer um desses services para registrar routers, e o worker importa os mesmos services, o ARQ pode falhar no startup com ImportError ou comportamento indefinido dependendo da ordem de importação. Isso precisa ser testado antes de qualquer outra coisa.
+O "fallback para memória" do cache Redis esconde o problema
+O relatório diz "Fallback para memória se Redis indisponível". No contexto do projeto, o worker e o FastAPI são processos separados. Se Redis cair durante um job em andamento, o worker continua com cache vazio em memória — mas o FastAPI também instancia seu próprio cache em memória separado. O fallback não resolve o problema original, apenas esconde. Se Redis não está disponível, o cache simplesmente não funciona e cada chamada ao LLM vai para a API. Isso é aceitável, mas o código precisa logar isso claramente, não silenciosamente fazer fallback.
+Pydantic validation + "fallback defensivo" pode aceitar roteiros quebrados
+O relatório menciona "tenta consertar o JSON". Se o LLM retorna um roteiro com 8 falas ao invés de 40, ou falas com 80 palavras ao invés de 25, e o "fallback defensivo" aceita isso para não quebrar o job — o resultado vai ser um áudio de 2 minutos ao invés de 15, ou o Kokoro recebendo textos enormes que vai truncar silenciosamente. Validar o schema não é suficiente; precisa validar também os valores (contagem de falas razoável para a duração pedida, limite real de palavras por fala).
+
+O que testar, em ordem, antes do frontend
+Nível 1 — O sistema sobe?
+bash# Teste 1: Worker sobe sem import circular
+cd backend
+python -c "from workers.podcast_worker import process_podcast_job; print('OK')"
+
+# Teste 2: FastAPI sobe
+uvicorn main:app --port 8000
+curl http://localhost:8000/health
+
+# Teste 3: Worker ARQ sobe
+arq workers.podcast_worker.WorkerSettings
+Se qualquer um desses três falhar, para tudo e resolve antes de continuar.
+Nível 2 — Cada serviço funciona isolado?
+bash# Teste 4: Ingestor com PDF real
+python -c "
+from services.ingestor import ingest_file
+result = ingest_file('test.pdf')
+print(result['char_count'], result['text_hash'])
+"
+
+# Teste 5: text_cleaner com casos edge
+python -c "
+from utils.text_cleaner import clean_for_tts
+casos = ['A API retornou 1200 resultados', 'IA é inteligência artificial', 'https://exemplo.com/pagina']
+for c in casos: print(clean_for_tts(c))
+"
+
+# Teste 6: LLM com texto curto (evita gastar cota)
+python -c "
+from services.llm import get_provider
+import asyncio
+provider = get_provider('groq')
+result = asyncio.run(provider.health_check())
+print('Groq disponível:', result)
+"
+
+# Teste 7: Kokoro direto
+curl -X POST http://localhost:8880/v1/audio/speech \
+  -H 'Content-Type: application/json' \
+  -d '{"input":"Teste de voz","voice":"pm_alex","model":"kokoro"}' \
+  --output test_kokoro.mp3
+Nível 3 — Pipeline completo com job mínimo
+Este é o teste mais importante. Criar um job com texto curto (3 parágrafos, ~200 palavras) e executar o pipeline completo do início ao fim:
+bash# Teste 8: Job completo end-to-end
+# 1. Criar job via API
+curl -X POST http://localhost:8000/upload/paste \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "Python é uma linguagem de programação. É simples e poderosa. Usada em ciência de dados.",
+    "title": "Teste Mínimo",
+    "llm_mode": "groq",
+    "podcast_type": "cohost",
+    "target_duration": 5,
+    "voice_host": "pm_alex",
+    "voice_cohost": "pf_dora"
+  }'
+
+# 2. Pegar o job_id retornado e iniciar
+curl -X POST http://localhost:8000/jobs/{job_id}/start
+
+# 3. Monitorar SSE
+curl -N http://localhost:8000/jobs/{job_id}/stream
+
+# 4. Quando DONE, verificar resultado
+curl http://localhost:8000/jobs/{job_id}/result
+Nível 4 — Qualidade de áudio (Task 15 preview)
+Depois do job de teste gerar o MP3:
+bash# Teste 9: Verificar LUFS com pyloudnorm
+python -c "
+import soundfile as sf
+import pyloudnorm as pyln
+data, rate = sf.read('output/teste_minimo.mp3')
+meter = pyln.Meter(rate)
+loudness = meter.integrated_loudness(data)
+print(f'LUFS: {loudness:.1f} (target: -18 a -14)')
+assert -18 <= loudness <= -14, f'LUFS fora do range: {loudness}'
+"
+
+# Teste 10: Verificar ausência de cliques (análise de amplitude)
+python -c "
+from pydub import AudioSegment
+import numpy as np
+audio = AudioSegment.from_mp3('output/teste_minimo.mp3')
+samples = np.array(audio.get_array_of_samples())
+# Detectar picos abruptos (cliques)
+diff = np.abs(np.diff(samples.astype(float)))
+threshold = np.percentile(diff, 99.9)
+clicks = np.sum(diff > threshold * 3)
+print(f'Possíveis cliques detectados: {clicks} (target: 0)')
+"
+
+Sequência recomendada de execução
+Antes de qualquer frontend:
+Dia 1 — Subir o ambiente
+
+Rodar docker compose up e verificar se todos os 5 serviços sobem sem erro
+Resolver imports circulares se existirem
+Confirmar que /health retorna todos os serviços como UP
+
+Dia 1 — Testes unitários dos serviços
+
+Rodar Testes 4, 5, 6, 7 em sequência
+Qualquer falha: corrigir antes de continuar
+
+Dia 2 — Pipeline end-to-end
+
+Rodar Teste 8 com texto curto
+Escutar o MP3 gerado manualmente — é a única forma de validar qualidade real
+Se soar bem: rodar Testes 9 e 10 para confirmar métricas
+
+Dia 2 — Começar frontend
+
+Só depois de ter um MP3 gerado e validado
+
+
+Uma coisa que nenhum teste automatizado vai substituir
+Escutar o áudio gerado. Métricas de LUFS e detecção de cliques ajudam, mas a pergunta real é: "isso soa como um podcast ou como um TTS experimental?" Essa resposta só vem ouvindo. Gere o episódio de teste, coloque no fone, e avalie:
+
+As pausas entre falantes soam naturais?
+O volume é consistente entre Thiago e Andreia?
+Tem algum "clique" ou "pop" audível nas transições?
+A velocidade de fala está adequada para conteúdo educacional?
+
+Se qualquer uma dessas respostas for "não", o problema está no TTS Orchestrator ou na Pós-Produção — e é muito mais fácil corrigir agora do que depois do frontend estar pronto.

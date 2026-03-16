@@ -1,0 +1,28 @@
+{%- macro speaker_badge(name) -%}
+    {%- if name.lower() == 'host' or name.lower() == 'anfitrião' -%}
+        ANFITRIÃO
+    {%- elif name.lower() == 'cohost' or name.lower() == 'co-host' or name.lower() == 'co host' -%}
+        CO-HOST
+    {%- else -%}
+        {{ name|upper }}
+    {%- endif -%}
+{%- endmacro -%}
+
+{
+  "title": "{{ title }}",
+  "generated_at": "{{ generated_at }}",
+  "target_duration_minutes": {{ target_duration }},
+  "depth_level": "{{ depth_level }}",
+  "segments": [
+    {%- for segment in segments -%}
+    {
+      "index": {{ loop.index0 }},
+      "speaker": "{{ segment.speaker }}",
+      "speaker_label": "{{ speaker_badge(segment.speaker) }}",
+      "text": "{{ segment.text }}",
+      "emotion": "{{ segment.emotion|default('neutral') }}",
+      "pause_after_ms": {{ segment.pause_after_ms|default(600) }}
+    }{% if not loop.last %},{% endif %}
+    {%- endfor -%}
+  ]
+}

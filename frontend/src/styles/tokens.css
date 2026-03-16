@@ -1,0 +1,167 @@
+/* FABOT Podcast Studio - Design System Tokens */
+:root {
+  /* Superfícies */
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F7F7F7;
+  --bg-tertiary: #F0F0F0;
+  --bg-hover: #EBEBEB;
+
+  /* Bordas */
+  --border-default: #DCDCDC;
+  --border-strong: #B0B0B0;
+  --border-focus: #0A0A0A;
+
+  /* Texto */
+  --text-primary: #0A0A0A;
+  --text-secondary: #555555;
+  --text-disabled: #AAAAAA;
+  --text-label: #333333;
+
+  /* Estados */
+  --color-action: #0A0A0A;
+  --color-error: #CC0000;
+  --color-success: #007A00;
+  --color-processing: #0052CC;
+  --color-warning: #B35A00;
+
+  /* Progresso */
+  --color-progress-bg: #E8E8E8;
+  --color-progress-fill: #0A0A0A;
+
+  /* Tipografia */
+  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+  --font-size-md: 14px;
+  --font-size-lg: 15px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 22px;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --letter-spacing-label: 0.06em;
+
+  /* Espaçamentos */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Bordas arredondadas */
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+
+  /* Sombras */
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* Dark Mode */
+[data-theme="dark"] {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #242424;
+  --bg-tertiary: #2d2d2d;
+  --bg-hover: #333333;
+
+  --border-default: #404040;
+  --border-strong: #555555;
+  --border-focus: #FFFFFF;
+
+  --text-primary: #F0F0F0;
+  --text-secondary: #AAAAAA;
+  --text-disabled: #666666;
+  --text-label: #CCCCCC;
+
+  --color-action: #FFFFFF;
+  --color-progress-bg: #333333;
+  --color-progress-fill: #FFFFFF;
+
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* Reset básico */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: var(--font-weight-semibold);
+}
+
+.label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-label);
+  color: var(--text-label);
+}
+
+a {
+  color: var(--color-action);
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+input, textarea, select {
+  font-family: inherit;
+  font-size: inherit;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  outline: none;
+  transition: border-color 150ms ease;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: var(--border-focus);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
