@@ -47,8 +47,6 @@ async def root():
 
 @app.get("/audio/{filepath:path}")
 async def serve_audio(filepath: str):
-    from pathlib import Path
-
     base_dir = Path(__file__).resolve().parent.parent
     audio_path = base_dir / "data" / "output" / filepath
     if not audio_path.exists():
@@ -56,3 +54,33 @@ async def serve_audio(filepath: str):
     return FileResponse(
         audio_path, media_type="audio/mpeg", filename=filepath.split("/")[-1]
     )
+
+
+@app.get("/download/{job_id}")
+async def download_audio(job_id: str):
+    from backend.database import SessionLocal
+    from backend.models import Job
+    import re
+
+    db = SessionLocal()
+    job = db.query(Job).filter(Job.id == job_id).first()
+    db.close()
+
+    if not job:
+        return {"error": "Job não encontrado"}
+
+    if not job.audio_path:
+        return {"error": "Áudio não gerado ainda"}
+
+    audio_path = Path(job.audio_path)
+    if not audio_path.exists():
+        return {"error": "Arquivo não encontrado", "path": str(audio_path)}
+
+    # Criar nome do arquivo baseado no título do podcast
+    # Remove caracteres inválidos para nome de arquivo
+    safe_title = re.sub(r"[^\w\s\-]", "", job.title)
+    safe_title = re.sub(r"[\s]+", "_", safe_title)
+    safe_title = safe_title[:50]  # Limita tamanho
+    download_filename = f"{safe_title}.mp3"
+
+    return FileResponse(audio_path, media_type="audio/mpeg", filename=download_filename)

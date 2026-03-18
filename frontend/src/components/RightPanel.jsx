@@ -160,14 +160,17 @@ function PlayerTab() {
     return <EmptyState />;
   }
   
-  // Converter data/output/xxx/xxx_final.mp3 para /audio/xxx/xxx_final.mp3
-  const rawPath = currentJob?.audio_path || '';
-  const audioPath = rawPath.replace('data/output/', '');
-  const audioUrl = audioPath ? `http://localhost:8000/audio/${audioPath}` : null;
+  // Novo endpoint de download com nome do podcast
+  const downloadUrl = currentJob?.id 
+    ? `http://localhost:8000/download/${currentJob.id}` 
+    : null;
+  const audioUrl = currentJob?.audio_path 
+    ? `http://localhost:8000/audio/${currentJob.audio_path.replace('data/output/', '')}` 
+    : null;
   const scriptUrl = `http://localhost:8000/jobs/${currentJob.id}/script`;
   
   console.log('[PlayerTab] audio_path:', currentJob.audio_path);
-  console.log('[PlayerTab] audioUrl:', audioUrl);
+  console.log('[PlayerTab] downloadUrl:', downloadUrl);
   
   return (
     <div className="player-tab">
@@ -193,13 +196,13 @@ function PlayerTab() {
         <h3>{currentJob.title || 'FABOT Podcast'}</h3>
         <p>
           Duração: {currentJob.duration_seconds || '—'}s · 
-          {currentJob.llm_model || 'GLM'} · 
+          {currentJob.llm_mode || 'gemini'} · 
           {new Date(currentJob.created_at).toLocaleDateString('pt-BR')}
         </p>
       </div>
       
       <div className="player-actions">
-        <a href={audioUrl} className="download-btn" download={`${currentJob.id}_podcast.mp3`}>
+        <a href={downloadUrl} className="download-btn" download>
           ↓ Baixar MP3
         </a>
         <a href={scriptUrl} className="download-btn" download={`${currentJob.id}_roteiro.txt`}>

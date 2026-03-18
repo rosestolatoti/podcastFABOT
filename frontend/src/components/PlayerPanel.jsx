@@ -22,6 +22,10 @@ function PlayerPanel() {
       })()
     : null;
   
+  const downloadUrl = currentJob?.id 
+    ? `http://localhost:8000/download/${currentJob.id}` 
+    : null;
+  
   const handlePlayJob = async (jobId) => {
     try {
       const response = await axios.get(`http://localhost:8000/jobs/${jobId}`);
@@ -132,8 +136,8 @@ function PlayerPanel() {
             
             <div className="download-buttons">
               <a 
-                href={audioUrl} 
-                download={`${currentJob.title || 'podcast'}.mp3`}
+                href={downloadUrl} 
+                download
                 className="download-btn"
               >
                 ↓ Baixar MP3
