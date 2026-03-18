@@ -77,6 +77,8 @@ def run_generate_script_only(job_id: str):
         job.current_step = "Lendo texto..."
         db.commit()
 
+        logger.info(f"[ScriptOnly] Job {job_id} encontrado, status: {job.status}")
+
         import asyncio
 
         loop = asyncio.new_event_loop()
@@ -95,10 +97,11 @@ def run_generate_script_only(job_id: str):
                 job.status = "FAILED"
                 job.error_message = str(e)
                 db.commit()
-        except Exception as db_err:
-            logger.error(f"[ScriptOnly] Erro ao atualizar status: {db_err}")
+        except Exception:
+            pass
     finally:
-        db.close()
+        if db:
+            db.close()
 
 
 class JobCreate(BaseModel):
@@ -180,6 +183,35 @@ async def get_job(job_id: str, db: Session = Depends(get_db)):
         "voice_host": job.voice_host,
         "created_at": job.created_at.isoformat() if job.created_at else None,
     }
+
+
+@router.post("/{job_id}/start-tts")
+async def start_tts(job_id: str, db: Session = Depends(get_db)):
+    """Inicia geração de TTS apenas (para jobs com roteiro pronto)"""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job não encontrado")
+
+    if job.status != "SCRIPT_DONE":
+        raise HTTPException(
+            status_code=400, detail=f"Status deve ser SCRIPT_DONE, atual: {job.status}"
+        )
+
+    try:
+        from arq import create_pool
+        from backend.workers.podcast_worker import WorkerSettings
+
+        redis = await create_pool(WorkerSettings.get_redis_settings())
+        await redis.enqueue_job("start_tts_job", job_id)
+
+        job.status = "TTS_QUEUED"
+        job.current_step = "TTS enfileirado"
+        db.commit()
+
+        return {"status": "queued", "job_id": job_id}
+    except Exception as e:
+        logger.error(f"Erro ao enfileirar TTS: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/{job_id}/start")

@@ -17,9 +17,13 @@ const SPEECH_STYLES = [
   'Descontraído',
 ];
 const LLM_MODES = [
-  { value: 'groq', label: 'llama-3.3-70b (Groq)' },
-  { value: 'gemini', label: 'Gemini Flash' },
-  { value: 'ollama', label: 'Ollama Local' },
+  { value: 'gemini-2.5-flash', label: '🟢 Gemini 2.5 Flash (Recomendado)' },
+  { value: 'gemini-2.5-flash-lite', label: '🟢 Gemini 2.5 Flash-Lite' },
+  { value: 'gemini-2.5-pro', label: '🟢 Gemini 2.5 Pro' },
+  { value: 'glm-4.7-flash', label: '🔵 GLM-4.7-Flash' },
+  { value: 'glm-4-flash', label: '🔵 GLM-4-Flash' },
+  { value: 'groq', label: '🟠 Llama 3.3 (Groq)' },
+  { value: 'ollama', label: '🐳 Ollama Local' },
 ];
 
 function EpisodeConfig() {

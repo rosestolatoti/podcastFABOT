@@ -4,7 +4,7 @@ import PDFViewerInline from './PDFViewerInline';
 import './InputPanel.css';
 
 function InputPanel({ onGenerateScript, onGeneratePodcast }) {
-  const { inputTab, setInputTab, currentJob } = useJobStore();
+  const { inputTab, setInputTab, currentJob, progress, progressMessage, progressError, setProgress, clearProgress } = useJobStore();
   const [files, setFiles] = useState([]);
   const [text, setText] = useState('');
   const [title, setTitle] = useState('');
@@ -87,18 +87,36 @@ function InputPanel({ onGenerateScript, onGeneratePodcast }) {
     setViewMode('input');
   }, []);
   
+  const generateTitleFromText = (text) => {
+    if (!text || text.trim().length < 50) return 'Novo Podcast';
+    
+    const cleanText = text.trim();
+    const firstLines = cleanText.split('\n').slice(0, 3).join(' ');
+    const words = firstLines.split(/\s+/).slice(0, 15).join(' ');
+    
+    if (words.length > 60) return words.substring(0, 60) + '...';
+    return words || 'Novo Podcast';
+  };
+  
   const handleGenerateScriptClick = useCallback(() => {
     if (text.trim().length < 100 && files.length === 0) return;
-    onGenerateScript({ text, files, title: title || 'Novo Podcast' });
+    const autoTitle = title || generateTitleFromText(text);
+    onGenerateScript({ text, files, title: autoTitle });
   }, [text, files, title, onGenerateScript]);
   
   const handleGeneratePodcastClick = useCallback(() => {
     if (text.trim().length < 100 && files.length === 0) return;
-    onGeneratePodcast({ text, files, title: title || 'Novo Podcast' });
+    const autoTitle = title || generateTitleFromText(text);
+    onGeneratePodcast({ text, files, title: autoTitle });
   }, [text, files, title, onGeneratePodcast]);
 
   const isDisabled = text.trim().length < 100 && files.length === 0;
-  const isProcessing = currentJob && !['DONE', 'FAILED', 'SCRIPT_DONE'].includes(currentJob.status);
+  
+  // Verifica se há um job em processamento ativo
+  const activeStatuses = ['READING', 'LLM_PROCESSING', 'TTS_PROCESSING', 'PENDING'];
+  const isProcessing = currentJob && 
+    currentJob.status && 
+    activeStatuses.includes(currentJob.status);
 
   return (
     <div className="input-panel">
@@ -216,6 +234,21 @@ function InputPanel({ onGenerateScript, onGeneratePodcast }) {
           onChange={(e) => setTitle(e.target.value)}
         />
       </div>
+      
+      {/* Barra de Progresso */}
+      {isProcessing && (
+        <div className="progress-container">
+          <div className="progress-bar-wrapper">
+            <div 
+              className={`progress-bar ${progressError ? 'error' : ''}`}
+              style={{ width: `${progress || 30}%` }}
+            />
+          </div>
+          <span className={`progress-message ${progressError ? 'error' : ''}`}>
+            {progressError ? progressMessage : (progressMessage || 'Gerando roteiro...')}
+          </span>
+        </div>
+      )}
       
       <div className="action-buttons">
         <button 

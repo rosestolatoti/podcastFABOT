@@ -29,7 +29,11 @@ function AppContent() {
     setCurrentJobId,
     setJobHistory,
     activeTab,
-    setActiveTab
+    setActiveTab,
+    llmMode,
+    setProgress,
+    clearProgress,
+    resetCurrentJob
   } = useJobStore();
   
   useHealthCheck();
@@ -71,14 +75,21 @@ function AppContent() {
   // Gerar apenas roteiro (texto) - não gera áudio
   const handleGenerateScript = useCallback(async (data) => {
     console.log('[handleGenerateScript] Recebido:', data);
+    
+    // Limpar job anterior antes de criar novo
+    resetCurrentJob();
+    
     try {
       let jobId;
+      
+      // Iniciar progresso
+      setProgress(20, 'Criando job...');
       
       if (data.text && data.text.trim().length >= 100) {
         const params = new URLSearchParams({
           title: data.title || 'Novo Podcast',
           text: data.text,
-          llm_mode: 'groq',
+          llm_mode: llmMode,
           voice_host: 'pm_alex',
           podcast_type: 'monologue',
           target_duration: '10',
@@ -90,7 +101,7 @@ function AppContent() {
         const formData = new FormData();
         formData.append('file', data.files[0]);
         formData.append('title', data.files[0].name);
-        formData.append('llm_mode', 'groq');
+        formData.append('llm_mode', llmMode);
         formData.append('voice_host', 'pm_alex');
         
         const response = await axios.post('http://localhost:8000/upload/', formData, {
@@ -101,6 +112,8 @@ function AppContent() {
       
       if (jobId) {
         setCurrentJobId(jobId);
+        setActiveTab('progresso');
+        setProgress(40, 'Gerando roteiro com IA...');
         
         // Gera apenas roteiro (LLM), sem áudio
         await axios.post(`http://localhost:8000/jobs/${jobId}/generate-script`);
@@ -110,16 +123,26 @@ function AppContent() {
           const res = await axios.get(`http://localhost:8000/jobs/${jobId}`);
           setCurrentJob(res.data);
           
-          if (res.data.status === 'SCRIPT_DONE') {
-            setActiveTab('roteiro');
+          // Atualizar progresso baseado no status
+          const status = res.data.status;
+          if (status === 'LLM_PROCESSING') {
+            setProgress(60, 'Finalizando roteiro...');
+          } else if (status === 'SCRIPT_DONE') {
+            setProgress(100, 'Roteiro pronto!');
+            setTimeout(() => {
+              clearProgress();
+              setActiveTab('roteiro');
+            }, 1000);
             return;
-          }
-          if (res.data.status === 'FAILED') {
-            alert('Erro ao gerar roteiro: ' + res.data.error_message);
+          } else if (status === 'FAILED') {
+            setProgress(100, 'Erro: ' + (res.data.error_message || 'Falha ao gerar'), true);
             return;
-          }
-          if (res.data.status === 'DONE') {
-            setActiveTab('player');
+          } else if (status === 'DONE') {
+            setProgress(100, 'Podcast completo!');
+            setTimeout(() => {
+              clearProgress();
+              setActiveTab('player');
+            }, 1000);
             return;
           }
           
@@ -129,9 +152,9 @@ function AppContent() {
       }
     } catch (error) {
       console.error('[handleGenerateScript] Erro:', error);
-      alert('Erro ao gerar roteiro: ' + error.message);
+      setProgress(100, 'Erro: ' + error.message, true);
     }
-  }, [setCurrentJob, setCurrentJobId, setActiveTab]);
+  }, [setCurrentJob, setCurrentJobId, setActiveTab, setProgress, clearProgress]);
   
   // Gerar áudio a partir do roteiro existente
   const handleGenerateAudio = useCallback(async () => {
@@ -168,14 +191,21 @@ function AppContent() {
   // Gerar podcast completo (roteiro + áudio)
   const handleGeneratePodcast = useCallback(async (data) => {
     console.log('[handleGeneratePodcast] Recebido:', data);
+    
+    // Limpar job anterior antes de criar novo
+    resetCurrentJob();
+    
     try {
       let jobId;
+      
+      // Iniciar progresso
+      setProgress(10, 'Criando job...');
       
       if (data.text && data.text.trim().length >= 100) {
         const params = new URLSearchParams({
           title: data.title || 'Novo Podcast',
           text: data.text,
-          llm_mode: 'groq',
+          llm_mode: llmMode,
           voice_host: 'pm_alex',
           podcast_type: 'monologue',
           target_duration: '10',
@@ -187,7 +217,7 @@ function AppContent() {
         const formData = new FormData();
         formData.append('file', data.files[0]);
         formData.append('title', data.files[0].name);
-        formData.append('llm_mode', 'groq');
+        formData.append('llm_mode', llmMode);
         formData.append('voice_host', 'pm_alex');
         
         const response = await axios.post('http://localhost:8000/upload/', formData, {
@@ -198,22 +228,33 @@ function AppContent() {
       
       if (jobId) {
         setCurrentJobId(jobId);
+        setActiveTab('progresso');
+        setProgress(30, 'Gerando roteiro com IA...');
         
         // Gera tudo (roteiro + áudio)
         await axios.post(`http://localhost:8000/jobs/${jobId}/start`);
-        
-        setActiveTab('player');
         
         const pollJob = async () => {
           const res = await axios.get(`http://localhost:8000/jobs/${jobId}`);
           setCurrentJob(res.data);
           
-          if (res.data.status === 'DONE') {
-            setActiveTab('player');
+          // Atualizar progresso baseado no status
+          const status = res.data.status;
+          const progressVal = res.data.progress || 0;
+          
+          if (status === 'LLM_PROCESSING') {
+            setProgress(40 + Math.floor(progressVal * 0.3), 'Gerando roteiro... ' + Math.floor(40 + progressVal * 0.3) + '%');
+          } else if (status === 'SCRIPT_DONE' || status === 'TTS_PROCESSING') {
+            setProgress(70 + Math.floor(progressVal * 0.2), 'Gerando áudio... ' + Math.floor(70 + progressVal * 0.2) + '%');
+          } else if (status === 'DONE') {
+            setProgress(100, 'Podcast completo!');
+            setTimeout(() => {
+              clearProgress();
+              setActiveTab('player');
+            }, 1000);
             return;
-          }
-          if (res.data.status === 'FAILED') {
-            alert('Erro: ' + res.data.error_message);
+          } else if (status === 'FAILED') {
+            setProgress(100, 'Erro: ' + (res.data.error_message || 'Falha ao gerar'), true);
             return;
           }
           
@@ -223,9 +264,9 @@ function AppContent() {
       }
     } catch (error) {
       console.error('[handleGeneratePodcast] Erro:', error);
-      alert('Erro ao gerar podcast: ' + error.message);
+      setProgress(100, 'Erro: ' + error.message, true);
     }
-  }, [setCurrentJob, setCurrentJobId, setActiveTab]);
+  }, [setCurrentJob, setCurrentJobId, setActiveTab, setProgress, clearProgress]);
   
   return (
     <div className="app">

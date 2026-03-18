@@ -31,6 +31,12 @@ const useJobStore = create(
       activeTab: 'roteiro',
       historyOpen: false,
       inputTab: 'arquivos',
+      llmMode: 'gemini-2.5-flash',
+      
+      // Progresso
+      progress: 0,
+      progressMessage: '',
+      progressError: false,
       
       // Actions
       setCurrentJob: (job) => set({ currentJob: job }),
@@ -60,6 +66,18 @@ const useJobStore = create(
       setActiveTab: (tab) => set({ activeTab: tab }),
       setHistoryOpen: (open) => set({ historyOpen: open }),
       setInputTab: (tab) => set({ inputTab: tab }),
+      setLlmMode: (mode) => set({ llmMode: mode }),
+      
+      setProgress: (progress, message = '', error = false) => set({ 
+        progress, 
+        progressMessage: message,
+        progressError: error 
+      }),
+      clearProgress: () => set({ 
+        progress: 0, 
+        progressMessage: '',
+        progressError: false 
+      }),
       
       reset: () => set({
         currentJobId: null,
@@ -69,11 +87,18 @@ const useJobStore = create(
         activeTab: 'roteiro',
         historyOpen: false,
       }),
+      
+      resetCurrentJob: () => set({
+        currentJobId: null,
+        currentJob: null,
+        progress: 0,
+        progressMessage: '',
+        progressError: false,
+      }),
     }),
     {
       name: 'fabot-storage',
       partialize: (state) => ({ 
-        currentJob: state.currentJob,
         currentJobId: state.currentJobId,
         jobHistory: state.jobHistory,
         activeTab: state.activeTab,

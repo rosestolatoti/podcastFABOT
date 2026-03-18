@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from typing import Any
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -190,6 +191,10 @@ class GroqProvider(LLMProvider):
             podcast_type=config.get("podcast_type", "monologue"),
             voice_host=config.get("voice_host", ""),
             voice_cohost=config.get("voice_cohost", ""),
+            episode_number=config.get("episode_number", 1),
+            total_episodes=config.get("total_episodes", 1),
+            section_title=config.get("section_title", "Introdução"),
+            context=None,
         )
 
         messages = [
@@ -265,10 +270,10 @@ class GroqProvider(LLMProvider):
 
 
 class GeminiProvider(LLMProvider):
-    def __init__(self):
+    def __init__(self, model: str = "gemini-2.5-flash"):
         self.api_key = os.getenv("GEMINI_API_KEY")
-        self.model = "gemini-1.5-flash"
-        self.base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        self.model = model
+        self.base_url = f"https://generativelanguage.googleapis.com/v1/models/{self.model}:generateContent"
 
     async def health_check(self) -> bool:
         if not self.api_key:
@@ -300,9 +305,13 @@ class GeminiProvider(LLMProvider):
             podcast_type=config.get("podcast_type", "monologue"),
             voice_host=config.get("voice_host", ""),
             voice_cohost=config.get("voice_cohost", ""),
+            episode_number=config.get("episode_number", 1),
+            total_episodes=config.get("total_episodes", 1),
+            section_title=config.get("section_title", "Introdução"),
+            context=None,
         )
 
-        full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}"
+        full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}\n\nRetorne APENAS o JSON válido, sem markdown ou outros textos."
 
         for attempt in range(3):
             try:
@@ -314,11 +323,10 @@ class GeminiProvider(LLMProvider):
                             "contents": [{"parts": [{"text": full_prompt}]}],
                             "generationConfig": {
                                 "temperature": 0.7,
-                                "maxOutputTokens": 8000,
-                                "responseMimeType": "application/json",
+                                "maxOutputTokens": 32000,
                             },
                         },
-                        timeout=aiohttp.ClientTimeout(total=120),
+                        timeout=aiohttp.ClientTimeout(total=180),
                     ) as resp:
                         if resp.status != 200:
                             body = await resp.text()
@@ -326,7 +334,12 @@ class GeminiProvider(LLMProvider):
 
                         result = await resp.json()
                         content = result["candidates"][0]["content"]["parts"][0]["text"]
-
+                        
+                        # Extrair JSON do markdown se necessário
+                        json_match = re.search(r'\{[\s\S]*\}', content)
+                        if json_match:
+                            content = json_match.group()
+                        
                         try:
                             script_data = json.loads(content)
                         except json.JSONDecodeError as e:
@@ -385,9 +398,10 @@ class OllamaProvider(LLMProvider):
             podcast_type=config.get("podcast_type", "monologue"),
             voice_host=config.get("voice_host", ""),
             voice_cohost=config.get("voice_cohost", ""),
-            section_title=config.get("section_title", "Seção Principal"),
             episode_number=config.get("episode_number", 1),
             total_episodes=config.get("total_episodes", 1),
+            section_title=config.get("section_title", "Introdução"),
+            context=None,
         )
 
         full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}\n\nRetorne APENAS o JSON."
@@ -443,31 +457,35 @@ class OllamaProvider(LLMProvider):
 class GLMProvider(LLMProvider):
     """Provedor GLM (ChatGLM) - Modelos gratuitos"""
 
-    def __init__(self):
-        self.api_key = settings.GLM_API_KEY or "6b754c80b0a848909600eadaa4ee5818"
+    def __init__(self, model: str = "glm-4.7-flash"):
+        self.api_key = (
+            settings.GLM_API_KEY or "6b754c80b0a848909600eadaa4ee5818.yRm84RBqDH7ldPxY"
+        )
         self.base_url = "https://open.bigmodel.cn/api/paas/v4"
-        self.model = "glm-4-flash"  # Modelo gratuito principal
+        self.model = model
 
     async def generate_script(self, text: str, config: dict) -> dict:
         """Gera roteiro usando GLM"""
-        template = Template(USER_PROMPT_TEMPLATE)
-        user_prompt = template.render(
+        text_hash = compute_text_hash(text)
+        config_hash = compute_config_hash(config)
+
+        cached = cache_manager.get(text_hash, config_hash)
+        if cached:
+            logger.info("Usando cache GLM")
+            return cached
+
+        user_prompt = USER_PROMPT_TEMPLATE.render(
             text=text,
             target_duration=config.get("target_duration", 10),
             depth_level=config.get("depth_level", "normal"),
             voice_host=config.get("voice_host", "pm_alex"),
             voice_cohost=config.get("voice_cohost", "pm_emily"),
             podcast_type=config.get("podcast_type", "dialogue"),
-            section_title=config.get("section_title", ""),
             episode_number=config.get("episode_number", 1),
             total_episodes=config.get("total_episodes", 1),
+            section_title=config.get("section_title", "Introdução"),
+            context=None,
         )
-
-        cache_key = self._get_cache_key(text, config)
-        cached = cache_manager.get(cache_key, config.get("depth_level", "normal"))
-        if cached:
-            logger.info("Usando cache GLM")
-            return cached
 
         for attempt in range(3):
             try:
@@ -502,9 +520,12 @@ class GLMProvider(LLMProvider):
                         result = await resp.json()
                         content = result["choices"][0]["message"]["content"]
 
-                        script_data = self._extract_json(content)
-                        if not script_data:
-                            logger.warning("GLM não retornou JSON válido")
+                        try:
+                            script_data = json.loads(content)
+                        except json.JSONDecodeError:
+                            logger.warning(
+                                f"GLM não retornou JSON válido: {content[:200]}"
+                            )
                             continue
 
                         script = validate_script_response(script_data)
@@ -515,9 +536,7 @@ class GLMProvider(LLMProvider):
                         script_dict["llm_provider"] = "glm"
                         script_dict["llm_model"] = self.model
 
-                        cache_manager.set(
-                            cache_key, config.get("depth_level", "normal"), script_dict
-                        )
+                        cache_manager.set(text_hash, config_hash, script_dict)
                         logger.info(
                             f"Roteiro gerado com GLM: {len(script_dict.get('segments', []))} segmentos"
                         )
@@ -525,23 +544,31 @@ class GLMProvider(LLMProvider):
 
             except Exception as e:
                 logger.warning(f"Tentativa GLM {attempt + 1} falhou: {e}")
-                await asyncio.sleep(2)
+                await asyncio.sleep(10)
 
         raise Exception("Falha ao gerar com GLM")
 
 
 def get_provider(mode: str = "groq") -> LLMProvider:
+    mode = mode.lower()
     providers = {
         "groq": GroqProvider,
-        "gemini": GeminiProvider,
+        "gemini": lambda: GeminiProvider("gemini-2.5-flash"),
+        "gemini-2.0-flash": lambda: GeminiProvider("gemini-2.0-flash"),
+        "gemini-2.0-flash-lite": lambda: GeminiProvider("gemini-2.0-flash-lite"),
+        "gemini-2.5-flash": lambda: GeminiProvider("gemini-2.5-flash"),
+        "gemini-2.5-flash-lite": lambda: GeminiProvider("gemini-2.5-flash-lite"),
+        "gemini-2.5-pro": lambda: GeminiProvider("gemini-2.5-pro"),
+        "gemini-1.5-flash": lambda: GeminiProvider("gemini-1.5-flash"),
         "ollama": OllamaProvider,
-        "glm": GLMProvider,
-        "glm-4-flash": GLMProvider,
-        "glm-4": GLMProvider,
+        "glm": lambda: GLMProvider("glm-4.7-flash"),
+        "glm-4-flash": lambda: GLMProvider("glm-4-flash"),
+        "glm-4.7-flash": lambda: GLMProvider("glm-4.7-flash"),
+        "glm-4": lambda: GLMProvider("glm-4"),
     }
 
-    provider_class = providers.get(mode.lower())
-    if not provider_class:
+    provider_fn = providers.get(mode)
+    if not provider_fn:
         raise ValueError(f"Modo LLM desconhecido: {mode}")
 
-    return provider_class()
+    return provider_fn()

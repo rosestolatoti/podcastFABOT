@@ -38,15 +38,15 @@ function ScriptPanel({ onGenerateAudio }) {
   
   const getSpeakerClass = (speaker) => {
     if (!speaker) return '';
-    if (speaker === 'NARRADOR') return 'narrador';
-    if (speaker === 'WILLIAM') return 'william';
+    if (speaker.toUpperCase() === 'NARRADOR') return 'narrador';
+    if (speaker.toUpperCase() === 'WILLIAM') return 'william';
     return 'cristina';
   };
   
   const getSpeakerName = (speaker) => {
     if (!speaker) return '???';
-    if (speaker === 'NARRADOR') return 'NARRADORA';
-    if (speaker === 'WILLIAM') return 'WILLIAM';
+    if (speaker.toUpperCase() === 'NARRADOR') return 'NARRADORA';
+    if (speaker.toUpperCase() === 'WILLIAM') return 'WILLIAM';
     return 'CRISTINA';
   };
   

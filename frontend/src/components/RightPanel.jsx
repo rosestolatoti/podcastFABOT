@@ -68,21 +68,61 @@ function ScriptTab() {
 }
 
 function ProgressTab() {
-  const { currentJob } = useJobStore();
+  const { currentJob, llmMode } = useJobStore();
+  
+  const isFailed = currentJob?.status === 'FAILED';
+  const isProcessing = currentJob?.status === 'READING' || currentJob?.status === 'LLM_PROCESSING';
+  const errorMessage = currentJob?.error_message;
   
   const steps = [
-    { status: 'READING', label: 'Lendo arquivos' },
-    { status: 'LLM_PROCESSING', label: 'Processando com IA (Groq)' },
-    { status: 'SCRIPT_DONE', label: 'Gerando roteiro' },
-    { status: 'TTS_PROCESSING', label: 'Sintetizando áudio (Kokoro)' },
-    { status: 'POST_PRODUCTION', label: 'Pós-produção' },
+    { status: 'READING', label: 'Lendo arquivos e processando texto' },
+    { status: 'LLM_PROCESSING', label: 'Gerando roteiro com IA (pode levar 30s-2min)' },
+    { status: 'SCRIPT_DONE', label: 'Roteiro pronto para revisão' },
+    { status: 'TTS_PROCESSING', label: 'Sintetizando áudio com Edge TTS' },
+    { status: 'POST_PRODUCTION', label: 'Finalizando e mixando áudio' },
   ];
   
   const currentStatus = currentJob?.status || 'PENDING';
   const progress = currentJob?.progress || 0;
+  const currentStep = currentJob?.current_step || 'Aguardando...';
+  const jobCreated = currentJob?.created_at ? new Date(currentJob.created_at) : null;
+  const elapsedTime = jobCreated ? Math.floor((Date.now() - jobCreated.getTime()) / 1000) : 0;
+  
+  const formatTime = (seconds) => {
+    if (!seconds) return '0s';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+  };
+  
+  const getLlmName = () => {
+    if (llmMode?.includes('glm')) return 'GLM-4.7';
+    if (llmMode?.includes('gemini')) return 'Gemini';
+    if (llmMode?.includes('groq')) return 'Groq';
+    return llmMode?.toUpperCase() || 'GLM';
+  };
   
   return (
     <div className="progress-tab">
+      {isProcessing && (
+        <div className="processing-indicator">
+          🔄 Processando... Aguarde!
+        </div>
+      )}
+      
+      <div className="progress-header">
+        <span className="progress-llm">🤖 IA: {getLlmName()}</span>
+        <span className="progress-timer">⏱️ {formatTime(elapsedTime)}</span>
+      </div>
+      
+      <div className="progress-bar">
+        <div className="progress-fill" style={{ width: `${progress}%` }} />
+      </div>
+      
+      <div className="progress-percent">{progress}%</div>
+      
+      <div className="progress-step">{currentStep}</div>
+      
       <div className="timeline">
         {steps.map((step, index) => {
           let stepStatus = 'pending';
@@ -94,7 +134,7 @@ function ProgressTab() {
           return (
             <div key={step.status} className={`timeline-item ${stepStatus}`}>
               <span className="timeline-icon">
-                {stepStatus === 'completed' && '●'}
+                {stepStatus === 'completed' && '✓'}
                 {stepStatus === 'active' && '◌'}
                 {stepStatus === 'pending' && '○'}
               </span>
@@ -104,13 +144,11 @@ function ProgressTab() {
         })}
       </div>
       
-      <div className="progress-bar">
-        <div className="progress-fill" style={{ width: `${progress}%` }} />
-      </div>
-      
-      <div className="progress-status">
-        {currentJob?.current_step || 'Aguardando...'}
-      </div>
+      {currentJob?.error_message && (
+        <div className="progress-error">
+          ❌ Erro: {currentJob.error_message}
+        </div>
+      )}
     </div>
   );
 }
@@ -155,7 +193,7 @@ function PlayerTab() {
         <h3>{currentJob.title || 'FABOT Podcast'}</h3>
         <p>
           Duração: {currentJob.duration_seconds || '—'}s · 
-          Groq · 
+          {currentJob.llm_model || 'GLM'} · 
           {new Date(currentJob.created_at).toLocaleDateString('pt-BR')}
         </p>
       </div>

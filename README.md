@@ -419,6 +419,140 @@ docker-compose up -d
 
 ## 📜 Histórico de Atualizações
 
+### 18/03/2026 - Correção Crítica do Edge TTS 🔴
+
+**PROBLEMA CRÍTICO DESCOBERTO:**
+O Edge TTS **NÃO SUPORTA SSML customizado**. O código estava gerando XML completo que era lido como texto pelo TTS.
+
+**Sintomas:**
+- Áudio falava: "Speak version equals 1.0, XML and SQLs, HTTP..."
+- Tags SSML sendo lidas como texto
+- Áudio completamente inutilizável
+
+**Causa:**
+```python
+# ANTES (ERRADO):
+ssml = """<speak version="1.0" xmlns="..." xml:lang="pt-BR">
+  <voice name="...">
+    <prosody rate="...">
+      Texto aqui
+    </prosody>
+  </voice>
+</speak>"""
+communicate = edge_tts.Communicate(ssml, voice)
+```
+
+**Solução:**
+```python
+# DEPOIS (CORRETO):
+communicate = edge_tts.Communicate(
+    texto_limpo,  # Sem tags SSML
+    voice,
+    rate="-5%",   # Parâmetros diretamente
+    pitch="+0Hz"
+)
+```
+
+**Arquivo corrigido:** `backend/services/fabot_tts.py`
+
+---
+
+### 18/03/2026 - Limpeza de Pastas
+
+**Problema:**
+Existiam pastas duplicadas fora do projeto:
+- `/ELEVENLABS2/backend/` (vazia, não usada)
+- `/ELEVENLABS2/data/` (parcial, não usada)
+- `/ELEVENLABS2/fabot-studio/` (projeto real)
+
+**Solução:**
+- Apagadas pastas não utilizadas
+- Projeto centralizado em `fabot-studio/`
+
+---
+
+### 18/03/2026 - Melhorias no Worker ARQ
+
+**Problemas corrigidos:**
+1. Status mismatch: worker aceitava só `SCRIPT_DONE`, mas endpoint mudava para `TTS_QUEUED`
+2. worker não recarregava código após updates
+
+**Solução:**
+```python
+# Worker agora aceita ambos statuses:
+if job.status not in ("SCRIPT_DONE", "TTS_QUEUED"):
+    raise ValueError(f"Status inválido para TTS: {job.status}")
+```
+
+---
+
+### 17/03/2026 - Interface Reformulada
+
+- ScriptPanel com caixas editáveis por fala
+- Cores por personagem (NARRADORA=Vermelho, WILLIAM=Azul, CRISTINA=Rosa)
+- Sistema de favoritos
+- Busca no histórico
+- Modo escuro
+
+---
+
+## 📊 Limites dos LLMs
+
+### Gemini 2.5 Flash (GRÁTIS) ⭐ PADRÃO
+| Limite | Valor |
+|--------|-------|
+| Requests/minuto | 15 |
+| Requests/dia | 1.500 |
+| Tokens contexto | 1M |
+| Custo | **GRÁTIS** |
+
+**Recomendação:** Use para ~10-15 podcasts/dia sem problemas.
+
+### Groq (Llama 3.3 70B)
+| Limite | Valor |
+|--------|-------|
+| Requests/minuto | 30 |
+| Custo | **GRÁTIS** (tier free) |
+
+### GLM-4-Flash
+| Limite | Valor |
+|--------|-------|
+| Custo | **GRÁTIS** |
+
+---
+
+## 🐛 Debugging - Checklist de Problemas
+
+Se o sistema não funcionar, verifique nesta ordem:
+
+1. **Backend rodando?**
+   ```bash
+   curl http://localhost:8000/health
+   ```
+
+2. **Redis rodando?**
+   ```bash
+   redis-cli ping
+   ```
+
+3. **Worker ARQ rodando?**
+   ```bash
+   ps aux | grep arq
+   ```
+
+4. **Worker recarregado após mudanças?**
+   ```bash
+   pkill -f "arq backend.workers"
+   # Reiniciar worker
+   ```
+
+5. **Status do job correto?**
+   ```bash
+   curl http://localhost:8000/jobs/{id}
+   ```
+
+---
+
 ### 16/03/2026
 - Interface completamente reformulada
 - ScriptPanel com caixas editáveis por fala
@@ -431,6 +565,21 @@ docker-compose up -d
 - Exportação de roteiro
 - Importação de podcasts prontos (ML e Python)
 - Correção do sistema de áudio
+
+---
+
+## 🔮 Próximas Melhorias Planejadas
+
+- [ ] Monitoramento de erros mais claro no frontend
+- [ ] Auto-retry quando falhar
+- [ ] Notificação quando podcast estiver pronto
+- [ ] Salvar podcasts por nome do tema (em vez de UUID)
+- [ ] Configurações de apresentador no frontend (nome, empresa, área)
+- [ ] OCR para extrair texto de imagens
+- [ ] Integração WhatsApp via OpenClaw
+- [ ] RAG (busca semântica) para contextualizar roteiros
+- [ ] Migração para PostgreSQL (quando escalar)
+- [ ] Deploy na nuvem (Vercel + Supabase)
 
 ---
 

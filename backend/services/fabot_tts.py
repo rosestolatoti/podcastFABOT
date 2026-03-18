@@ -55,24 +55,23 @@ PAUSES = {
 # ─────────────────────────────────────────────────────────────────
 
 
-def build_ssml(text: str, speaker: str, keywords: list[str]) -> str:
+def build_ssml(text: str, speaker: str, keywords: list[str]) -> dict:
     """
-    Monta o SSML para o Edge TTS.
-    Keywords são passadas dinamicamente — vêm do JSON do LLM.
-    Funciona para qualquer assunto.
+    Prepara o texto e configurações para o Edge TTS.
+    Edge TTS NÃO suporta SSML customizado!
+    Retorna dict com texto limpo e parâmetros de rate/pitch.
     """
     config = VOICES.get(speaker, VOICES["William"])
 
     processed = _apply_emphasis(text, keywords)
-    processed = processed.replace("...", '<break time="500ms"/>')
+    processed = processed.replace("...", "").strip()
 
-    return f"""<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="pt-BR">
-  <voice name="{config["voice"]}">
-    <prosody rate="{config["rate"]}" pitch="{config["pitch"]}">
-      {processed}
-    </prosody>
-  </voice>
-</speak>"""
+    return {
+        "text": processed,
+        "voice": config["voice"],
+        "rate": config["rate"],
+        "pitch": config["pitch"],
+    }
 
 
 def _apply_emphasis(text: str, keywords: list[str]) -> str:
@@ -105,8 +104,10 @@ async def synthesize_segment(
     output_path: Path,
 ) -> Path:
     """Gera o MP3 de um segmento com Edge TTS."""
-    ssml = build_ssml(text, speaker, keywords)
-    communicate = edge_tts.Communicate(ssml, VOICES[speaker]["voice"])
+    config = build_ssml(text, speaker, keywords)
+    communicate = edge_tts.Communicate(
+        config["text"], config["voice"], rate=config["rate"], pitch=config["pitch"]
+    )
 
     audio_data = b""
     async for chunk in communicate.stream():
@@ -208,7 +209,7 @@ async def build_episode(
 
     # ── Exporta MP3 final ───────────────────────────────────────
     output_dir.mkdir(parents=True, exist_ok=True)
-    final_path = output_dir / f"{job_id}_final.mp3"
+    final_path = output_dir / "final.mp3"
     episode.export(
         str(final_path),
         format="mp3",

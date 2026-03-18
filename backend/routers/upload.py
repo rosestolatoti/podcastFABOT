@@ -11,7 +11,12 @@ from pydantic import BaseModel
 
 from backend.database import get_db
 from backend.models import Job, File as FileModel
-from backend.services.ingestor import ingest_file, InvalidFileError, FileTooLargeError, ScannedPDFError
+from backend.services.ingestor import (
+    ingest_file,
+    InvalidFileError,
+    FileTooLargeError,
+    ScannedPDFError,
+)
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
@@ -28,10 +33,10 @@ async def upload_file(
     podcast_type: str = Form(default="monologue"),
     target_duration: int = Form(default=10),
     depth_level: str = Form(default="normal"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     job_id = str(uuid.uuid4())
-    
+
     job = Job(
         id=job_id,
         title=title,
@@ -47,44 +52,44 @@ async def upload_file(
     )
     db.add(job)
     db.commit()
-    
+
     upload_dir = Path(settings.UPLOAD_DIR) / job_id
     upload_dir.mkdir(parents=True, exist_ok=True)
-    
+
     file_ext = Path(file.filename).suffix.lower()
     file_path = upload_dir / f"{uuid.uuid4()}{file_ext}"
-    
+
     content = await file.read()
-    
+
     if len(content) > settings.MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Arquivo muito grande")
-    
+
     with open(file_path, "wb") as f:
         f.write(content)
-    
+
     try:
         result = ingest_file(file_path)
-        
+
         file_record = FileModel(
             id=str(uuid.uuid4()),
             job_id=job_id,
             original_name=file.filename,
-            file_type=file_ext.lstrip('.'),
+            file_type=file_ext.lstrip("."),
             file_path=str(file_path),
-            extracted_text=result['text'],
-            char_count=result['char_count'],
-            status="extracted"
+            extracted_text=result["text"],
+            char_count=result["char_count"],
+            status="extracted",
         )
         db.add(file_record)
         db.commit()
-        
+
         return {
             "job_id": job_id,
             "status": "uploaded",
-            "char_count": result['char_count'],
-            "text_hash": result['text_hash']
+            "char_count": result["char_count"],
+            "text_hash": result["text_hash"],
         }
-        
+
     except ScannedPDFError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except InvalidFileError as e:
@@ -106,13 +111,15 @@ async def upload_paste(
     podcast_type: str = "monologue",
     target_duration: int = 10,
     depth_level: str = "normal",
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     if not text or len(text.strip()) < 100:
-        raise HTTPException(status_code=400, detail="Texto muito curto (mínimo 100 caracteres)")
-    
+        raise HTTPException(
+            status_code=400, detail="Texto muito curto (mínimo 100 caracteres)"
+        )
+
     job_id = str(uuid.uuid4())
-    
+
     job = Job(
         id=job_id,
         title=title,
@@ -129,9 +136,17 @@ async def upload_paste(
     )
     db.add(job)
     db.commit()
-    
-    return {
-        "job_id": job_id,
-        "status": "uploaded",
-        "char_count": len(text)
-    }
+
+    try:
+        from arq import create_pool
+        from backend.workers.podcast_worker import WorkerSettings
+
+        redis = await create_pool(WorkerSettings.get_redis_settings())
+        await redis.enqueue_job("process_podcast_job", job_id)
+        job.status = "QUEUED"
+        job.current_step = "Job enfileirado para processamento"
+        db.commit()
+    except Exception as e:
+        logger.warning(f"Erro ao enfileirar job: {e}")
+
+    return {"job_id": job_id, "status": "uploaded", "char_count": len(text)}

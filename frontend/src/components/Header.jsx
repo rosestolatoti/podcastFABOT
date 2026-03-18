@@ -14,7 +14,7 @@ function ServiceBadge({ name, status }) {
 }
 
 function Header({ onHistoryClick }) {
-  const { services, currentJob, setHistoryOpen } = useJobStore();
+  const { services, currentJob, setHistoryOpen, llmMode, setLlmMode } = useJobStore();
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem('theme') === 'dark';
   });
@@ -42,11 +42,19 @@ function Header({ onHistoryClick }) {
       </div>
       
       <div className="header-right">
-        <select className="llm-select" defaultValue="glm">
-          <option value="glm">GLM-4-Flash ( Gratuito)</option>
-          <option value="groq">llama-3.3-70b (Groq)</option>
-          <option value="gemini">Gemini Flash</option>
-          <option value="ollama">Ollama Local</option>
+        <select className="llm-select" value={llmMode} onChange={(e) => setLlmMode(e.target.value)}>
+          <optgroup label="🟢 Gemini (Grátis)">
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado)</option>
+            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
+            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+          </optgroup>
+          <optgroup label="🔵 GLM (Grátis)">
+            <option value="glm-4.7-flash">GLM-4.7-Flash</option>
+            <option value="glm-4-flash">GLM-4-Flash</option>
+          </optgroup>
+          <optgroup label="🟠 Groq (Grátis)">
+            <option value="groq">Llama 3.3 (Groq)</option>
+          </optgroup>
         </select>
         
         {currentJob && (

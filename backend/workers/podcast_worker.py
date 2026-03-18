@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import uuid
 from datetime import datetime
@@ -27,10 +28,16 @@ class JobConfig(BaseModel):
 
 
 class WorkerSettings:
-    functions = []
-    redis_settings = {"host": "localhost", "port": 6379}
+    functions = ["process_podcast_job", "start_tts_job"]
+    redis_settings = None
     max_jobs = 5
     timeout = 3600
+
+    @classmethod
+    def get_redis_settings(cls):
+        from arq.connections import RedisSettings
+
+        return RedisSettings(host="localhost", port=6379)
 
 
 async def process_podcast_job(ctx: dict, job_id: str) -> dict:
@@ -75,7 +82,7 @@ async def process_podcast_job(ctx: dict, job_id: str) -> dict:
 
         script = await provider.generate_script(text, config)
 
-        job.script_json = str(script)
+        job.script_json = json.dumps(script, ensure_ascii=False)
         job.status = "SCRIPT_DONE"
         job.progress = 40
         job.current_step = "Roteiro pronto para revisão"
@@ -137,7 +144,7 @@ async def generate_script_only(ctx: dict, job_id: str) -> dict:
 
         script = await provider.generate_script(secoes[0].conteudo, config)
 
-        job.script_json = str(script)
+        job.script_json = json.dumps(script, ensure_ascii=False)
         job.status = "SCRIPT_DONE"
         job.progress = 40
         job.current_step = "Roteiro pronto para revisão"
@@ -170,7 +177,7 @@ async def start_tts_job(ctx: dict, job_id: str) -> dict:
         if not job:
             raise ValueError(f"Job não encontrado: {job_id}")
 
-        if job.status != "SCRIPT_DONE":
+        if job.status not in ("SCRIPT_DONE", "TTS_QUEUED"):
             raise ValueError(f"Status inválido para TTS: {job.status}")
 
         import json

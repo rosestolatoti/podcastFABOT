@@ -234,12 +234,7 @@ Profundidade: {{ depth_level }}
 → Pontos principais com exemplos. Mínimo 8 segmentos por conceito.
 {%- endif %}
 
-{% if context %}
-Personagem preferencial: {{ context.personagem }} ({{ context.cenario }})
-Problema base: {{ context.problema }}
-{% endif %}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 MATERIAL (texto limpo, pronto para ensinar)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
