@@ -237,21 +237,6 @@ function InputPanel({ onGenerateScript, onGeneratePodcast }) {
         )}
       </div>
       
-      {/* Barra de Progresso */}
-      {isProcessing && (
-        <div className="progress-container">
-          <div className="progress-bar-wrapper">
-            <div 
-              className={`progress-bar ${progressError ? 'error' : ''}`}
-              style={{ width: `${progress || 30}%` }}
-            />
-          </div>
-          <span className={`progress-message ${progressError ? 'error' : ''}`}>
-            {progressError ? progressMessage : (progressMessage || 'Gerando roteiro...')}
-          </span>
-        </div>
-      )}
-      
       <div className="action-buttons">
         <button 
           className="btn btn-secondary"

@@ -105,7 +105,7 @@ def run_generate_script_only(job_id: str):
 
 
 class JobCreate(BaseModel):
-    title: str
+    title: str | None = None
     llm_mode: str = "groq"
     voice_host: str = "pf_dora"
     voice_cohost: str | None = None
@@ -122,7 +122,7 @@ class ScriptUpdate(BaseModel):
 async def create_job(job_data: JobCreate, db: Session = Depends(get_db)):
     job = Job(
         id=str(uuid.uuid4()),
-        title=job_data.title,
+        title=job_data.title or "Novo Podcast",
         status="PENDING",
         progress=0,
         current_step="Aguardando início...",

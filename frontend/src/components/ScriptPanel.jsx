@@ -34,7 +34,8 @@ function ScriptPanel({ onGenerateAudio }) {
   
   const hasScript = editedSegments.length > 0;
   const hasAudio = currentJob && currentJob.status === 'DONE' && currentJob.audio_path;
-  const isProcessing = currentJob && !['DONE', 'FAILED'].includes(currentJob.status);
+  const canGenerateAudio = currentJob && currentJob.status === 'SCRIPT_DONE' && hasScript;
+  const isProcessing = currentJob && !['DONE', 'FAILED', 'SCRIPT_DONE', 'PENDING'].includes(currentJob.status);
   
   const getSpeakerClass = (speaker) => {
     if (!speaker) return '';
@@ -90,15 +91,20 @@ function ScriptPanel({ onGenerateAudio }) {
     <div className="script-panel">
       <div className="panel-header">
         <h3>2. Roteiro</h3>
-        <span className="panel-subtitle">
-          {hasScript ? `${editedSegments.length} falas` : 'Aguardando...'}
-        </span>
+        {hasScript && (
+          <span className="panel-subtitle">
+            {scriptData?.title || 'Roteiro'} • {editedSegments.length} falas
+          </span>
+        )}
       </div>
       
       {!hasScript ? (
         <div className="empty-state">
           <div className="empty-icon">📝</div>
-          <div className="empty-title">Nenhum roteiro</div>
+          <div className="empty-title">Nenhum roteiro ainda</div>
+          <div className="empty-subtitle">
+            Cole texto na aba de entrada e clique em "Gerar Roteiro"
+          </div>
         </div>
       ) : (
         <>
@@ -131,8 +137,8 @@ function ScriptPanel({ onGenerateAudio }) {
               {saving ? 'Salvando...' : '💾 Salvar'}
             </button>
             {!hasAudio && (
-              <button className="btn btn-success" onClick={onGenerateAudio} disabled={isProcessing}>
-                🎧 Gerar Áudio
+              <button className="btn btn-success" onClick={onGenerateAudio} disabled={!canGenerateAudio || isProcessing}>
+                {isProcessing ? '◌ Gerando...' : '🎧 Gerar Áudio'}
               </button>
             )}
           </div>

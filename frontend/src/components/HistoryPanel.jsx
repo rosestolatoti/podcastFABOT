@@ -97,10 +97,19 @@ function HistoryPanel({ onClose }) {
             </div>
             
             <div className="item-meta">
-              {job.created_at && new Date(job.created_at).toLocaleDateString('pt-BR')}
-              {job.duration_seconds && ` · ${job.duration_seconds}s`}
-              {' · Groq'}
-              {job.audio_path && ` · ${Math.round(job.audio_path.size / 1024 / 1024 * 10) / 10 || '—'} MB`}
+              {job.created_at && (
+                <span className="item-date">
+                  {new Date(job.created_at).toLocaleDateString('pt-BR', { 
+                    day: '2-digit', 
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </span>
+              )}
+              {job.duration_seconds && ` • ${Math.floor(job.duration_seconds / 60)}:${String(job.duration_seconds % 60).padStart(2, '0')}`}
+              {' • '}{job.llm_mode === 'gemini-2.5-flash' ? 'Gemini' : 'Groq'}
             </div>
             
             <div className="item-actions">
