@@ -8,7 +8,6 @@ function InputPanel({ onGenerateScript, onGeneratePodcast }) {
   const { inputTab, setInputTab, currentJob, progress, progressMessage, progressError, setProgress, clearProgress } = useJobStore();
   const [files, setFiles] = useState([]);
   const [text, setText] = useState('');
-  const [title, setTitle] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [previewPdf, setPreviewPdf] = useState(null);
   const [viewMode, setViewMode] = useState('input'); // 'input' ou 'preview'
@@ -87,7 +86,6 @@ function InputPanel({ onGenerateScript, onGeneratePodcast }) {
 
   const handleClear = useCallback(() => {
     setText('');
-    setTitle('');
     setFiles([]);
     setPreviewPdf(null);
     setViewMode('input');
@@ -106,15 +104,13 @@ function InputPanel({ onGenerateScript, onGeneratePodcast }) {
   
   const handleGenerateScriptClick = useCallback(() => {
     if (text.trim().length < 100 && files.length === 0) return;
-    const autoTitle = title || generateTitleFromText(text);
-    onGenerateScript({ text, files, title: autoTitle });
-  }, [text, files, title, onGenerateScript]);
+    onGenerateScript({ text, files });
+  }, [text, files, onGenerateScript]);
   
   const handleGeneratePodcastClick = useCallback(() => {
     if (text.trim().length < 100 && files.length === 0) return;
-    const autoTitle = title || generateTitleFromText(text);
-    onGeneratePodcast({ text, files, title: autoTitle });
-  }, [text, files, title, onGeneratePodcast]);
+    onGeneratePodcast({ text, files });
+  }, [text, files, onGeneratePodcast]);
 
   const isDisabled = text.trim().length < 100 && files.length === 0;
   
@@ -239,16 +235,6 @@ function InputPanel({ onGenerateScript, onGeneratePodcast }) {
             </div>
           </>
         )}
-      </div>
-      
-      <div className="title-input">
-        <label>Título do Podcast:</label>
-        <input 
-          type="text" 
-          placeholder="Ex: Machine Learning - Aula 01"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
       </div>
       
       {/* Barra de Progresso */}

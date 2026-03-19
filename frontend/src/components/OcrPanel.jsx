@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import './OcrPanel.css';
 
@@ -7,7 +7,14 @@ function OcrPanel({ onUseText }) {
   const [extracting, setExtracting] = useState(false);
   const [result, setResult] = useState(null);
   const [dragOver, setDragOver] = useState(false);
+  const [savedText, setSavedText] = useState('');
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (result?.success && result.result?.text) {
+      setSavedText(result.result.text);
+    }
+  }, [result]);
 
   const handleFileSelect = async (selectedFile) => {
     if (!selectedFile) return;
@@ -88,6 +95,10 @@ function OcrPanel({ onUseText }) {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  const clearSavedText = () => {
+    setSavedText('');
   };
 
   return (
@@ -207,6 +218,66 @@ function OcrPanel({ onUseText }) {
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {savedText && !result && (
+        <div className="ocr-saved-text">
+          <div className="saved-header">
+            <h4>📋 Texto Salvo</h4>
+            <button className="clear-saved-btn" onClick={clearSavedText} title="Limpar texto salvo">
+              🗑️
+            </button>
+          </div>
+          <div className="result-text-container">
+            <textarea
+              className="result-text"
+              value={savedText}
+              readOnly
+              rows={10}
+            />
+          </div>
+          <div className="result-actions">
+            <button className="btn btn-secondary" onClick={() => {
+              navigator.clipboard.writeText(savedText);
+              alert('Texto copiado!');
+            }}>
+              📋 Copiar Texto
+            </button>
+            <button className="btn btn-success" onClick={() => onUseText(savedText)}>
+              ➡️ Usar como Fonte
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!file && !result && savedText && (
+        <div className="ocr-saved-text">
+          <div className="saved-header">
+            <h4>📋 Texto Salvo</h4>
+            <button className="clear-saved-btn" onClick={clearSavedText} title="Limpar texto salvo">
+              🗑️
+            </button>
+          </div>
+          <div className="result-text-container">
+            <textarea
+              className="result-text"
+              value={savedText}
+              readOnly
+              rows={10}
+            />
+          </div>
+          <div className="result-actions">
+            <button className="btn btn-secondary" onClick={() => {
+              navigator.clipboard.writeText(savedText);
+              alert('Texto copiado!');
+            }}>
+              📋 Copiar Texto
+            </button>
+            <button className="btn btn-success" onClick={() => onUseText(savedText)}>
+              ➡️ Usar como Fonte
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -47,7 +47,7 @@ def extract_text_from_image(image_path: Path, language: str = "por+eng") -> dict
         avg_confidence = sum(confidences) / len(confidences) if confidences else 0
 
         # Limpar texto
-        text = clean_extracted_text(text)
+        text = clean_extracted_text(text, is_pdf=False)
 
         return {
             "text": text,
@@ -91,7 +91,7 @@ def extract_text_from_pdf(pdf_path: Path) -> dict:
                     full_text.append(f"--- Página {i + 1} ---\n{text}")
 
         combined_text = "\n\n".join(full_text)
-        combined_text = clean_extracted_text(combined_text)
+        combined_text = clean_extracted_text(combined_text, is_pdf=True)
 
         return {
             "text": combined_text,
@@ -111,31 +111,64 @@ def extract_text_from_pdf(pdf_path: Path) -> dict:
         }
 
 
-def clean_extracted_text(text: str) -> str:
+def clean_extracted_text(text: str, is_pdf: bool = False) -> str:
     """
     Limpa e formata o texto extraído.
+
+    Args:
+        text: Texto extraído
+        is_pdf: Se True, aplica limpeza específica para PDFs
     """
     if not text:
         return ""
 
-    # Remover linhas em branco excessivas
+    # Remover marcadores de página do PDF
+    text = re.sub(r"--- Página \d+ ---", "", text)
+
+    # Padrões OCR comuns (letras duplicadas/espaçadas como "E E d d e l l w e i s s")
+    text = re.sub(
+        r"\b([A-Za-z])\s+\1{1,}\s*", r"\1\1", text
+    )  # Letras duplicadas com espaço
+    text = re.sub(
+        r"\b([A-Za-z])\1{2,}", r"\1\1", text
+    )  # Mais de 2 letras iguais seguidas
+
+    # Remover linhas de rodapé/número de página sozinhas
     lines = text.split("\n")
     cleaned_lines = []
-    prev_empty = False
 
     for line in lines:
         stripped = line.strip()
-        if stripped:
-            cleaned_lines.append(stripped)
-            prev_empty = False
-        elif not prev_empty:
-            cleaned_lines.append("")
-            prev_empty = True
+
+        # Pular linhas que são apenas números de página ou códigos ISBN
+        if re.match(r"^ISBN\s*\d", stripped, re.IGNORECASE):
+            continue
+        if re.match(r"^Ed\.?\s*$", stripped, re.IGNORECASE):
+            continue
+        if re.match(r"^(www\.|http)", stripped, re.IGNORECASE):
+            continue
+        if re.match(r"^crb\s*\d+", stripped, re.IGNORECASE):
+            continue
+        if re.match(r"^cdd\s*\d", stripped, re.IGNORECASE):
+            continue
+
+        # Pular linhas muito curtas que parecem ser artefatos OCR
+        if (
+            len(stripped) <= 3
+            and stripped.isupper()
+            and not any(c.isdigit() for c in stripped)
+        ):
+            continue
+
+        cleaned_lines.append(stripped)
 
     # Remover espaços duplos
     text = "\n".join(cleaned_lines)
     text = re.sub(r" +", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
+
+    # Remover espaços antes de pontuação
+    text = re.sub(r"\s+([.,;:!?])", r"\1", text)
 
     return text.strip()
 

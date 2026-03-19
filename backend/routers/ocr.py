@@ -18,7 +18,7 @@ from backend.services.ocr_extractor import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/ocr", tags=["ocr"])
+router = APIRouter(tags=["ocr"])
 
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
