@@ -410,6 +410,29 @@
   padding: 10px;
 }
 
+/* OCR Tab */
+.ocr-tab {
+  height: 100%;
+  overflow: auto;
+}
+
+.ocr-tab .ocr-panel {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+}
+
+.ocr-tab .ocr-header h3 {
+  margin: 0 0 var(--space-2) 0;
+  font-size: 16px;
+}
+
+.ocr-tab .ocr-description {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-3) 0;
+}
+
 /* Text Tab */
 .text-tab {
   height: 100%;

@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import useJobStore from '../store/jobStore';
 import PDFViewerInline from './PDFViewerInline';
+import OcrPanel from './OcrPanel';
 import './InputPanel.css';
 
 function InputPanel({ onGenerateScript, onGeneratePodcast }) {
@@ -79,6 +80,11 @@ function InputPanel({ onGenerateScript, onGeneratePodcast }) {
     setViewMode('input');
   }, []);
   
+  const handleOcrTextExtracted = useCallback((extractedText) => {
+    setText(extractedText);
+    setInputTab('texto');
+  }, []);
+
   const handleClear = useCallback(() => {
     setText('');
     setTitle('');
@@ -151,6 +157,12 @@ function InputPanel({ onGenerateScript, onGeneratePodcast }) {
               >
                 Texto
               </button>
+              <button 
+                className={`tab ${inputTab === 'ocr' ? 'active' : ''}`}
+                onClick={() => setInputTab('ocr')}
+              >
+                OCR
+              </button>
             </div>
             
             <div className="tab-content">
@@ -201,6 +213,10 @@ function InputPanel({ onGenerateScript, onGeneratePodcast }) {
                       ))}
                     </div>
                   )}
+                </div>
+              ) : inputTab === 'ocr' ? (
+                <div className="ocr-tab">
+                  <OcrPanel onUseText={handleOcrTextExtracted} />
                 </div>
               ) : (
                 <div className="text-tab">

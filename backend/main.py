@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from backend.config import settings
 from backend.database import init_db
-from backend.routers import jobs, upload, health
+from backend.routers import jobs, upload, health, ocr
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
@@ -38,6 +38,7 @@ app.add_middleware(
 app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 app.include_router(upload.router, prefix="/upload", tags=["upload"])
 app.include_router(health.router, prefix="/health", tags=["health"])
+app.include_router(ocr.router, prefix="/ocr", tags=["ocr"])
 
 
 @app.get("/")
