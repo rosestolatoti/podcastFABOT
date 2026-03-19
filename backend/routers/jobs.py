@@ -247,7 +247,7 @@ async def generate_script_only(
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
 
-    if job.status not in ["PENDING", "FAILED"]:
+    if job.status not in ["PENDING", "QUEUED", "FAILED"]:
         raise HTTPException(status_code=400, detail=f"Status inválido: {job.status}")
 
     # Atualiza status
