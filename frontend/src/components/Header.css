@@ -116,3 +116,18 @@
 .theme-toggle:hover {
   background: var(--bg-hover);
 }
+
+.config-btn {
+  font-size: 18px;
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 150ms ease;
+  background: transparent;
+  border: 1px solid var(--border-default);
+}
+
+.config-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-focus);
+}

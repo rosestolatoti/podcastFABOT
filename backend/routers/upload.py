@@ -1,6 +1,8 @@
 import hashlib
 import logging
 import uuid
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from datetime import datetime
 
@@ -21,6 +23,11 @@ from backend.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+executor = ThreadPoolExecutor(max_workers=4)
+
+
+def ingest_file_sync(file_path: Path) -> dict:
+    return ingest_file(file_path)
 
 
 @router.post("/")
@@ -68,7 +75,8 @@ async def upload_file(
         f.write(content)
 
     try:
-        result = ingest_file(file_path)
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(executor, ingest_file_sync, file_path)
 
         file_record = FileModel(
             id=str(uuid.uuid4()),

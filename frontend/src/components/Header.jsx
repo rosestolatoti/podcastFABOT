@@ -13,7 +13,7 @@ function ServiceBadge({ name, status }) {
   );
 }
 
-function Header({ onHistoryClick }) {
+function Header({ onHistoryClick, onConfigClick }) {
   const { services, currentJob, setHistoryOpen, llmMode, setLlmMode } = useJobStore();
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem('theme') === 'dark';
@@ -35,9 +35,9 @@ function Header({ onHistoryClick }) {
       </div>
       
       <div className="header-center">
-        <ServiceBadge name="Edge TTS" status={services.kokoro} />
         <ServiceBadge name="Redis" status={services.redis} />
-        <ServiceBadge name="Groq" status={services.groq} />
+        <ServiceBadge name="Worker" status={services.worker} />
+        <ServiceBadge name="LLM" status={services.groq} />
         <ServiceBadge name="SQLite" status={services.backend} />
       </div>
       
@@ -73,6 +73,10 @@ function Header({ onHistoryClick }) {
         
         <button className="history-btn" onClick={() => setHistoryOpen(true)}>
           Histórico
+        </button>
+        
+        <button className="config-btn" onClick={onConfigClick} title="Configurações">
+          ⚙️
         </button>
       </div>
     </header>

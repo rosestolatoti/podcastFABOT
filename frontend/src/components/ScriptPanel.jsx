@@ -9,6 +9,36 @@ function ScriptPanel({ onGenerateAudio }) {
   const [editedSegments, setEditedSegments] = useState([]);
   const [saving, setSaving] = useState(false);
   const [editingIndex, setEditingIndex] = useState(null);
+  const [config, setConfig] = useState(null);
+  
+  const loadConfig = async () => {
+    try {
+      const response = await axios.get('http://localhost:8000/config/');
+      setConfig(response.data);
+    } catch (error) {
+      console.error('Erro ao carregar config:', error);
+    }
+  };
+  
+  useEffect(() => {
+    loadConfig();
+  }, []);
+  
+  useEffect(() => {
+    const handleConfigSaved = () => {
+      loadConfig();
+    };
+    window.addEventListener('config-saved', handleConfigSaved);
+    return () => window.removeEventListener('config-saved', handleConfigSaved);
+  }, []);
+  
+  const getSpeakerNames = () => {
+    return {
+      narrador: 'NARRADORA',
+      host: config?.apresentador?.nome?.toUpperCase() || 'WILLIAM',
+      cohost: config?.apresentadora?.nome?.toUpperCase() || 'CRISTINA'
+    };
+  };
   
   useEffect(() => {
     console.log('Current job:', currentJob?.id, 'script_json:', currentJob?.script_json ? 'YES' : 'NO');
@@ -39,16 +69,20 @@ function ScriptPanel({ onGenerateAudio }) {
   
   const getSpeakerClass = (speaker) => {
     if (!speaker) return '';
-    if (speaker.toUpperCase() === 'NARRADOR') return 'narrador';
-    if (speaker.toUpperCase() === 'WILLIAM') return 'william';
+    const upper = speaker.toUpperCase();
+    const names = getSpeakerNames();
+    if (upper === 'NARRADOR') return 'narrador';
+    if (upper === names.host) return 'william';
+    if (upper === names.cohost) return 'cristina';
     return 'cristina';
   };
   
   const getSpeakerName = (speaker) => {
     if (!speaker) return '???';
-    if (speaker.toUpperCase() === 'NARRADOR') return 'NARRADORA';
-    if (speaker.toUpperCase() === 'WILLIAM') return 'WILLIAM';
-    return 'CRISTINA';
+    const upper = speaker.toUpperCase();
+    const names = getSpeakerNames();
+    if (upper === 'NARRADOR') return 'NARRADORA';
+    return speaker.toUpperCase();
   };
   
   const handleTextChange = (index, newText) => {
@@ -100,10 +134,27 @@ function ScriptPanel({ onGenerateAudio }) {
       
       {!hasScript ? (
         <div className="empty-state">
-          <div className="empty-icon">📝</div>
-          <div className="empty-title">Nenhum roteiro ainda</div>
+          <div className="empty-icon">🎙️</div>
+          <div className="empty-title">Aguardando roteiro...</div>
           <div className="empty-subtitle">
             Cole texto na aba de entrada e clique em "Gerar Roteiro"
+          </div>
+          <div className="presenter-preview">
+            <div className="presenter-card narrador">
+              <div className="presenter-icon">🎤</div>
+              <div className="presenter-name">{getSpeakerNames().narrador}</div>
+              <div className="presenter-role">Voz de abertura</div>
+            </div>
+            <div className="presenter-card host">
+              <div className="presenter-icon">🎙️</div>
+              <div className="presenter-name">{getSpeakerNames().host}</div>
+              <div className="presenter-role">Apresentador</div>
+            </div>
+            <div className="presenter-card cohost">
+              <div className="presenter-icon">🎙️</div>
+              <div className="presenter-name">{getSpeakerNames().cohost}</div>
+              <div className="presenter-role">Apresentadora</div>
+            </div>
           </div>
         </div>
       ) : (

@@ -5,16 +5,16 @@ import useJobStore from './store/jobStore';
 import useHealthCheck from './hooks/useHealthCheck';
 import useVoices from './hooks/useVoices';
 import Header from './components/Header';
+import ConfigPanel from './components/ConfigPanel';
 import InputPanel from './components/InputPanel';
 import ScriptPanel from './components/ScriptPanel';
 import PlayerPanel from './components/PlayerPanel';
-import ProgressOverlay from './components/ProgressOverlay';
+import ActiveJobsBar from './components/ActiveJobsBar';
 import './styles/tokens.css';
 import './App.css';
 
 const queryClient = new QueryClient();
 
-// Initialize theme on load
 const savedTheme = localStorage.getItem('theme');
 if (savedTheme === 'dark') {
   document.documentElement.setAttribute('data-theme', 'dark');
@@ -22,8 +22,6 @@ if (savedTheme === 'dark') {
 
 function AppContent() {
   const { 
-    historyOpen, 
-    setHistoryOpen,
     currentJob,
     currentJobId,
     setCurrentJob,
@@ -32,47 +30,40 @@ function AppContent() {
     activeTab,
     setActiveTab,
     llmMode,
-    setProgress,
-    clearProgress,
-    resetCurrentJob
+    addActiveJob,
+    updateActiveJob,
+    removeActiveJob
   } = useJobStore();
   
-  const [showOverlay, setShowOverlay] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
   
   useHealthCheck();
   useVoices();
   
-  // Mostrar overlay quando job está sendo processado
-  useEffect(() => {
-    if (currentJobId && currentJob) {
-      const isProcessing = !['DONE', 'FAILED', 'SCRIPT_DONE', 'PENDING'].includes(currentJob.status);
-      setShowOverlay(isProcessing);
-    } else if (!currentJobId) {
-      setShowOverlay(false);
-    }
-  }, [currentJobId, currentJob?.status]);
-  
-  // Carregar job atual do backend quando a página carrega
   useEffect(() => {
     const loadCurrentJob = async () => {
-      if (currentJobId) {
-        try {
-          const response = await axios.get(`http://localhost:8000/jobs/${currentJobId}`);
-          setCurrentJob(response.data);
-          if (response.data.status === 'DONE') {
-            setActiveTab('player');
-          } else if (response.data.status === 'SCRIPT_DONE') {
-            setActiveTab('roteiro');
-          }
-        } catch (error) {
-          console.error('[loadCurrentJob] Erro:', error);
+      if (!currentJobId) return;
+      
+      try {
+        const response = await axios.get(`http://localhost:8000/jobs/${currentJobId}`);
+        setCurrentJob(response.data);
+        if (response.data.status === 'DONE') {
+          setActiveTab('player');
+        } else if (response.data.status === 'SCRIPT_DONE') {
+          setActiveTab('roteiro');
+        }
+      } catch (error) {
+        console.error('[loadCurrentJob] Erro:', error);
+        if (error.response?.status === 404) {
+          console.warn('[loadCurrentJob] Job não existe mais, limpando estado...');
+          setCurrentJobId(null);
+          setCurrentJob(null);
         }
       }
     };
     loadCurrentJob();
-  }, [currentJobId, setCurrentJob, setActiveTab]);
+  }, [currentJobId, setCurrentJob, setCurrentJobId, setActiveTab]);
   
-  // Carregar histórico
   useEffect(() => {
     const loadHistory = async () => {
       try {
@@ -85,19 +76,16 @@ function AppContent() {
     loadHistory();
   }, [setJobHistory]);
   
-  // Gerar apenas roteiro (texto) - não gera áudio
+  const MAX_POLL_TIME = 10 * 60 * 1000; // 10 minutos
+
   const handleGenerateScript = useCallback(async (data) => {
     console.log('[handleGenerateScript] Recebido:', data);
     
-    resetCurrentJob();
-    setProgress(10, '📋 Iniciando geração...');
-    setShowOverlay(true);
+    let jobId = null;
+    const pollStartTime = Date.now();
     
     try {
-      let jobId;
-      
       if (data.text && data.text.trim().length >= 100) {
-        // Gerar título automaticamente a partir do texto
         const titlePreview = data.text.trim().substring(0, 50).replace(/\n/g, ' ');
         const autoTitle = titlePreview.length > 45 ? titlePreview + '...' : titlePreview;
         
@@ -110,11 +98,9 @@ function AppContent() {
           target_duration: '10',
         });
         
-        setProgress(20, '📤 Enviando texto para IA...');
         const response = await axios.post(`http://localhost:8000/upload/paste?${params.toString()}`);
         jobId = response.data.job_id;
       } else if (data.files && data.files.length > 0) {
-        setProgress(20, '📁 Enviando arquivo...');
         const formData = new FormData();
         formData.append('file', data.files[0]);
         formData.append('title', data.files[0].name.replace(/\.[^.]+$/, ''));
@@ -128,41 +114,46 @@ function AppContent() {
       }
       
       if (jobId) {
+        const jobData = {
+          id: jobId,
+          title: data.text?.trim().substring(0, 50) || 'Novo Podcast',
+          status: 'PENDING',
+          progress: 10,
+          current_step: 'Iniciando...'
+        };
+        addActiveJob(jobData);
         setCurrentJobId(jobId);
         setActiveTab('roteiro');
-        setProgress(30, '🤖 IA gerando roteiro...');
         
         await axios.post(`http://localhost:8000/jobs/${jobId}/generate-script`);
         
         const pollScript = async () => {
           try {
-            const res = await axios.get(`http://localhost:8000/jobs/${jobId}`);
-            setCurrentJob(res.data);
-            
-            const status = res.data.status;
-            if (status === 'LLM_PROCESSING') {
-              setProgress(50, '⏳ Finalizando roteiro...');
-            } else if (status === 'SCRIPT_DONE') {
-              setProgress(100, '✅ Roteiro gerado com sucesso!');
-              setTimeout(() => {
-                setShowOverlay(false);
-                setActiveTab('roteiro');
-              }, 1500);
-              return;
-            } else if (status === 'FAILED') {
-              setProgress(100, '❌ Erro: ' + (res.data.error_message || 'Falha ao gerar'), true);
-              setShowOverlay(true);
-              return;
-            } else if (status === 'DONE') {
-              setProgress(100, '🎉 Podcast completo!');
-              setTimeout(() => {
-                setShowOverlay(false);
-                setActiveTab('player');
-              }, 1500);
+            if (Date.now() - pollStartTime > MAX_POLL_TIME) {
+              updateActiveJob(jobId, { 
+                status: 'FAILED', 
+                current_step: 'Tempo limite excedido (10 min). Verifique o Worker e tente novamente.' 
+              });
               return;
             }
             
-            setTimeout(pollScript, 2000);
+            const res = await axios.get(`http://localhost:8000/jobs/${jobId}`);
+            updateActiveJob(jobId, {
+              status: res.data.status,
+              progress: res.data.progress || 50,
+              current_step: res.data.current_step || 'Processando...',
+              script_json: res.data.script_json
+            });
+            setCurrentJob(res.data);
+            
+            const status = res.data.status;
+            if (status === 'SCRIPT_DONE') {
+              updateActiveJob(jobId, { progress: 100, current_step: 'Roteiro pronto!' });
+            } else if (status === 'FAILED') {
+              updateActiveJob(jobId, { current_step: 'Erro: ' + (res.data.error_message || 'Falha') });
+            } else if (status !== 'DONE' && !['SCRIPT_DONE', 'FAILED', 'CANCELLED'].includes(status)) {
+              setTimeout(pollScript, 2000);
+            }
           } catch (e) {
             console.error('Poll error:', e);
             setTimeout(pollScript, 3000);
@@ -173,44 +164,59 @@ function AppContent() {
     } catch (error) {
       console.error('[handleGenerateScript] Erro:', error);
       const errorMsg = error.response?.data?.detail || error.message || 'Erro desconhecido';
-      setProgress(100, '❌ Erro: ' + errorMsg, true);
-      setShowOverlay(true);
+      if (jobId) {
+        updateActiveJob(jobId, { status: 'FAILED', current_step: errorMsg });
+      }
+    } finally {
+      if (!jobId) {
+        console.warn('[handleGenerateScript] Job não foi criado, limpando estado...');
+      }
     }
-  }, [setCurrentJob, setCurrentJobId, setActiveTab, setProgress, clearProgress, resetCurrentJob, llmMode]);
+  }, [setCurrentJob, setCurrentJobId, setActiveTab, addActiveJob, updateActiveJob, llmMode]);
   
-  // Gerar áudio a partir do roteiro existente
   const handleGenerateAudio = useCallback(async () => {
     if (!currentJobId || !currentJob) return;
     
-    setProgress(10, '🎧 Iniciando síntese de áudio...');
-    setShowOverlay(true);
+    const pollStartTime = Date.now();
+    const jobData = {
+      id: currentJobId,
+      title: currentJob.title || 'Novo Podcast',
+      status: 'TTS_PROCESSING',
+      progress: 10,
+      current_step: 'Iniciando síntese...'
+    };
+    addActiveJob(jobData);
     
     try {
       await axios.post(`http://localhost:8000/jobs/${currentJobId}/start-tts`);
       
       const pollAudio = async () => {
         try {
-          const res = await axios.get(`http://localhost:8000/jobs/${currentJobId}`);
-          setCurrentJob(res.data);
-          
-          const status = res.data.status;
-          if (status === 'TTS_PROCESSING' || status === 'POST_PRODUCTION') {
-            const prog = res.data.progress || 50;
-            setProgress(prog, '🔊 Sintetizando áudio... ' + prog + '%');
-          } else if (status === 'DONE') {
-            setProgress(100, '✅ Áudio gerado com sucesso!');
-            setTimeout(() => {
-              setShowOverlay(false);
-              setActiveTab('player');
-            }, 1500);
-            return;
-          } else if (status === 'FAILED') {
-            setProgress(100, '❌ Erro: ' + (res.data.error_message || 'Falha ao gerar áudio'), true);
-            setShowOverlay(true);
+          if (Date.now() - pollStartTime > MAX_POLL_TIME) {
+            updateActiveJob(currentJobId, { 
+              status: 'FAILED', 
+              current_step: 'Tempo limite excedido (10 min). Verifique o Worker e tente novamente.' 
+            });
             return;
           }
           
-          setTimeout(pollAudio, 2000);
+          const res = await axios.get(`http://localhost:8000/jobs/${currentJobId}`);
+          updateActiveJob(currentJobId, {
+            status: res.data.status,
+            progress: res.data.progress || 50,
+            current_step: res.data.current_step || 'Sintetizando...'
+          });
+          setCurrentJob(res.data);
+          
+          const status = res.data.status;
+          if (status === 'DONE') {
+            updateActiveJob(currentJobId, { progress: 100, current_step: 'Áudio pronto!' });
+            setActiveTab('player');
+          } else if (status === 'FAILED') {
+            updateActiveJob(currentJobId, { current_step: 'Erro: ' + (res.data.error_message || 'Falha') });
+          } else if (!['DONE', 'FAILED', 'CANCELLED'].includes(status)) {
+            setTimeout(pollAudio, 2000);
+          }
         } catch (e) {
           console.error('Poll error:', e);
           setTimeout(pollAudio, 3000);
@@ -219,22 +225,17 @@ function AppContent() {
       pollAudio();
     } catch (error) {
       console.error('[handleGenerateAudio] Erro:', error);
-      setProgress(100, '❌ Erro: ' + error.message, true);
-      setShowOverlay(true);
+      updateActiveJob(currentJobId, { status: 'FAILED', current_step: error.message });
     }
-  }, [currentJobId, currentJob, setCurrentJob, setActiveTab, setProgress]);
+  }, [currentJobId, currentJob, setCurrentJob, addActiveJob, updateActiveJob, setActiveTab]);
   
-  // Gerar podcast completo (roteiro + áudio)
   const handleGeneratePodcast = useCallback(async (data) => {
     console.log('[handleGeneratePodcast] Recebido:', data);
     
-    resetCurrentJob();
-    setProgress(10, '📋 Iniciando geração...');
-    setShowOverlay(true);
+    let jobId = null;
+    const pollStartTime = Date.now();
     
     try {
-      let jobId;
-      
       if (data.text && data.text.trim().length >= 100) {
         const titlePreview = data.text.trim().substring(0, 50).replace(/\n/g, ' ');
         const autoTitle = titlePreview.length > 45 ? titlePreview + '...' : titlePreview;
@@ -248,11 +249,9 @@ function AppContent() {
           target_duration: '10',
         });
         
-        setProgress(20, '📤 Enviando texto...');
         const response = await axios.post(`http://localhost:8000/upload/paste?${params.toString()}`);
         jobId = response.data.job_id;
       } else if (data.files && data.files.length > 0) {
-        setProgress(20, '📁 Enviando arquivo...');
         const formData = new FormData();
         formData.append('file', data.files[0]);
         formData.append('title', data.files[0].name.replace(/\.[^.]+$/, ''));
@@ -266,37 +265,46 @@ function AppContent() {
       }
       
       if (jobId) {
+        const jobData = {
+          id: jobId,
+          title: data.text?.trim().substring(0, 50) || 'Novo Podcast',
+          status: 'PENDING',
+          progress: 10,
+          current_step: 'Iniciando...'
+        };
+        addActiveJob(jobData);
         setCurrentJobId(jobId);
-        setProgress(30, '🤖 Gerando roteiro com IA...');
         
         await axios.post(`http://localhost:8000/jobs/${jobId}/start`);
         
         const pollJob = async () => {
           try {
-            const res = await axios.get(`http://localhost:8000/jobs/${jobId}`);
-            setCurrentJob(res.data);
-            
-            const status = res.data.status;
-            const progressVal = res.data.progress || 0;
-            
-            if (status === 'LLM_PROCESSING') {
-              setProgress(30 + Math.floor(progressVal * 0.3), '📝 Gerando roteiro... ' + (30 + Math.floor(progressVal * 0.3)) + '%');
-            } else if (status === 'SCRIPT_DONE' || status === 'TTS_PROCESSING') {
-              setProgress(60 + Math.floor(progressVal * 0.3), '🔊 Sintetizando áudio... ' + (60 + Math.floor(progressVal * 0.3)) + '%');
-            } else if (status === 'DONE') {
-              setProgress(100, '🎉 Podcast completo!');
-              setTimeout(() => {
-                setShowOverlay(false);
-                setActiveTab('player');
-              }, 1500);
-              return;
-            } else if (status === 'FAILED') {
-              setProgress(100, '❌ Erro: ' + (res.data.error_message || 'Falha ao gerar'), true);
-              setShowOverlay(true);
+            if (Date.now() - pollStartTime > MAX_POLL_TIME) {
+              updateActiveJob(jobId, { 
+                status: 'FAILED', 
+                current_step: 'Tempo limite excedido (10 min). Verifique o Worker e tente novamente.' 
+              });
               return;
             }
             
-            setTimeout(pollJob, 2000);
+            const res = await axios.get(`http://localhost:8000/jobs/${jobId}`);
+            updateActiveJob(jobId, {
+              status: res.data.status,
+              progress: res.data.progress || 50,
+              current_step: res.data.current_step || 'Processando...',
+              script_json: res.data.script_json
+            });
+            setCurrentJob(res.data);
+            
+            const status = res.data.status;
+            if (status === 'DONE') {
+              updateActiveJob(jobId, { progress: 100, current_step: 'Podcast pronto!' });
+              setActiveTab('player');
+            } else if (status === 'FAILED') {
+              updateActiveJob(jobId, { current_step: 'Erro: ' + (res.data.error_message || 'Falha') });
+            } else if (!['DONE', 'FAILED', 'CANCELLED'].includes(status)) {
+              setTimeout(pollJob, 2000);
+            }
           } catch (e) {
             console.error('Poll error:', e);
             setTimeout(pollJob, 3000);
@@ -307,18 +315,19 @@ function AppContent() {
     } catch (error) {
       console.error('[handleGeneratePodcast] Erro:', error);
       const errorMsg = error.response?.data?.detail || error.message || 'Erro desconhecido';
-      setProgress(100, '❌ Erro: ' + errorMsg, true);
-      setShowOverlay(true);
+      if (jobId) {
+        updateActiveJob(jobId, { status: 'FAILED', current_step: errorMsg });
+      }
+    } finally {
+      if (!jobId) {
+        console.warn('[handleGeneratePodcast] Job não foi criado, limpando estado...');
+      }
     }
-  }, [setCurrentJob, setCurrentJobId, setActiveTab, setProgress, clearProgress, resetCurrentJob, llmMode]);
-  
-  const handleCloseOverlay = useCallback(() => {
-    setShowOverlay(false);
-  }, []);
+  }, [setCurrentJob, setCurrentJobId, setActiveTab, addActiveJob, updateActiveJob, llmMode]);
   
   return (
     <div className="app">
-      <Header />
+      <Header onConfigClick={() => setShowConfig(true)} />
       
       <div className="main-layout three-columns">
         <div className="column column-input">
@@ -339,7 +348,9 @@ function AppContent() {
         </div>
       </div>
       
-      <ProgressOverlay visible={showOverlay} onClose={handleCloseOverlay} />
+      <ActiveJobsBar />
+      
+      {showConfig && <ConfigPanel onClose={() => setShowConfig(false)} />}
     </div>
   );
 }

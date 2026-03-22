@@ -1,0 +1,162 @@
+.mini-job-card {
+  background: var(--card-bg, #fff);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  min-width: 200px;
+  max-width: 280px;
+  border-left: 4px solid #666;
+}
+
+[data-theme="dark"] .mini-job-card {
+  background: #2a2a3e;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.mini-job-card.done {
+  border-left-color: #22c55e;
+}
+
+.mini-job-card.failed,
+.mini-job-card.failed {
+  border-left-color: #ef4444;
+}
+
+.mini-job-card.cancelled {
+  border-left-color: #f59e0b;
+}
+
+.mini-job-card.script_done {
+  border-left-color: #3b82f6;
+}
+
+.mini-job-card.llm_processing,
+.mini-job-card.tts_processing,
+.mini-job-card.post_production {
+  border-left-color: #8b5cf6;
+}
+
+.mini-job-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mini-job-icon {
+  font-size: 16px;
+}
+
+.mini-job-title {
+  flex: 1;
+  font-weight: 500;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-job-cancel,
+.mini-job-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  opacity: 0.6;
+  transition: opacity 0.2s, background 0.2s;
+}
+
+.mini-job-cancel:hover,
+.mini-job-close:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] .mini-job-cancel:hover,
+[data-theme="dark"] .mini-job-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.mini-job-cancel {
+  color: #ef4444;
+}
+
+.mini-job-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mini-job-bar {
+  flex: 1;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+[data-theme="dark"] .mini-job-bar {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.mini-job-fill {
+  height: 100%;
+  background: #8b5cf6;
+  transition: width 0.3s ease;
+  border-radius: 2px;
+}
+
+.mini-job-card.done .mini-job-fill {
+  background: #22c55e;
+}
+
+.mini-job-card.failed .mini-job-fill {
+  background: #ef4444;
+}
+
+.mini-job-percent {
+  font-size: 11px;
+  color: #666;
+  min-width: 32px;
+  text-align: right;
+}
+
+[data-theme="dark"] .mini-job-percent {
+  color: #aaa;
+}
+
+.mini-job-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mini-job-status {
+  font-size: 11px;
+  color: #666;
+}
+
+[data-theme="dark"] .mini-job-status {
+  color: #aaa;
+}
+
+.mini-job-action {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.mini-job-action:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] .mini-job-action:hover {
+  background: rgba(255, 255, 255, 0.1);
+}

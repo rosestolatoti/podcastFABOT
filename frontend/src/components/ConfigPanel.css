@@ -1,0 +1,217 @@
+.config-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.config-modal {
+  background: var(--bg-primary);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 700px;
+  max-height: calc(100vh - 40px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.config-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.config-header .close-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.config-header .close-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.config-body {
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.config-section {
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.config-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.config-section h3 {
+  margin: 0 0 12px 0;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.config-section .hint {
+  margin: -8px 0 12px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.config-section input[type="text"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.config-section input[type="text"]:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.row-group {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.row-group input {
+  flex: 1;
+  margin-bottom: 0 !important;
+}
+
+.row-group select {
+  width: 120px;
+  padding: 10px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.personagens-grid,
+.empresas-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.personagem-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.personagem-row input {
+  margin-bottom: 0 !important;
+}
+
+.empresas-grid input {
+  margin-bottom: 0 !important;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.config-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-secondary);
+}
+
+.config-footer .btn {
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.config-footer .btn-primary {
+  background: var(--color-primary);
+  color: white;
+  border: none;
+}
+
+.config-footer .btn-primary:hover {
+  opacity: 0.9;
+}
+
+.config-footer .btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.config-footer .btn-secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+
+.config-footer .btn-secondary:hover {
+  background: var(--bg-hover);
+}
+
+.loading {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+/* Dark mode */
+[data-theme="dark"] .config-section input[type="text"] {
+  background: var(--bg-tertiary);
+  border-color: var(--border-secondary);
+}
+
+[data-theme="dark"] .row-group select {
+  background: var(--bg-tertiary);
+  border-color: var(--border-secondary);
+}

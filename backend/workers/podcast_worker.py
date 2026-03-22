@@ -37,7 +37,13 @@ class WorkerSettings:
     def get_redis_settings(cls):
         from arq.connections import RedisSettings
 
-        return RedisSettings(host="localhost", port=6379)
+        return RedisSettings(
+            host="localhost",
+            port=6379,
+            conn_timeout=10,
+            conn_retries=5,
+            conn_retry_delay=1,
+        )
 
 
 async def process_podcast_job(ctx: dict, job_id: str) -> dict:

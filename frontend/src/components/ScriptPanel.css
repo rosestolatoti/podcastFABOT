@@ -174,4 +174,77 @@
 .empty-title {
   font-size: 16px;
   color: #666;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.empty-subtitle {
+  font-size: 13px;
+  color: #999;
+  margin-bottom: 32px;
+}
+
+.presenter-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.presenter-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-radius: 10px;
+  border: 2px solid;
+  background: white;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.presenter-card.narrador {
+  border-color: #dc2626;
+  border-left-width: 5px;
+}
+
+.presenter-card.host {
+  border-color: #2563eb;
+  border-left-width: 5px;
+}
+
+.presenter-card.cohost {
+  border-color: #ec4899;
+  border-left-width: 5px;
+}
+
+.presenter-icon {
+  font-size: 24px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f5f5;
+  border-radius: 50%;
+}
+
+.presenter-card.narrador .presenter-icon { background: #fee2e2; }
+.presenter-card.host .presenter-icon { background: #dbeafe; }
+.presenter-card.cohost .presenter-icon { background: #fce7f3; }
+
+.presenter-name {
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 1px;
+}
+
+.presenter-card.narrador .presenter-name { color: #dc2626; }
+.presenter-card.host .presenter-name { color: #2563eb; }
+.presenter-card.cohost .presenter-name { color: #ec4899; }
+
+.presenter-role {
+  font-size: 12px;
+  color: #888;
+  margin-top: 2px;
 }

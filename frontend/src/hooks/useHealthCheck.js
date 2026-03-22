@@ -15,18 +15,18 @@ export function useHealthCheck() {
       
       const services = response.data.services || [];
       const newServices = {
-        kokoro: 'unknown',
         redis: 'unknown',
+        worker: 'unknown',
         groq: 'unknown',
         backend: 'up',
       };
       
       services.forEach(s => {
         const name = s.service?.toLowerCase();
-        if (name === 'kokoro') {
-          newServices.kokoro = s.status === 'UP' ? 'up' : 'down';
-        } else if (name === 'redis') {
+        if (name === 'redis') {
           newServices.redis = s.status === 'UP' ? 'up' : 'down';
+        } else if (name === 'worker') {
+          newServices.worker = s.status === 'UP' ? 'up' : 'down';
         } else if (name === 'ollama') {
           newServices.groq = s.status === 'UP' ? 'up' : 'down';
         }
@@ -36,8 +36,8 @@ export function useHealthCheck() {
     } catch (error) {
       console.error('Health check failed:', error);
       setServices({
-        kokoro: 'down',
         redis: 'down',
+        worker: 'down',
         groq: 'down',
         backend: 'down',
       });

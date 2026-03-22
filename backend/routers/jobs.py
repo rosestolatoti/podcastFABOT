@@ -22,6 +22,8 @@ router = APIRouter()
 
 def run_podcast_job_background(job_id: str):
     """Wrapper para executar job em background com sua própria sessão DB"""
+    import asyncio
+
     db = SessionLocal()
     try:
         logger.info(f"[Background] Iniciando processamento do job {job_id}")
@@ -35,16 +37,13 @@ def run_podcast_job_background(job_id: str):
         job.current_step = "Iniciando processamento..."
         db.commit()
 
-        # Executar o processamento (synchrounous)
-        import asyncio
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Usar asyncio.run() que cria e fecha o loop automaticamente
         try:
-            result = loop.run_until_complete(process_podcast_job({}, job_id))
+            result = asyncio.run(process_podcast_job({}, job_id))
             logger.info(f"[Background] Job {job_id} concluído: {result}")
-        finally:
-            loop.close()
+        except Exception as run_err:
+            logger.error(f"[Background] Erro ao executar job {job_id}: {run_err}")
+            raise
 
     except Exception as e:
         logger.error(f"[Background] Erro ao processar job {job_id}: {e}")
@@ -62,6 +61,7 @@ def run_podcast_job_background(job_id: str):
 
 def run_generate_script_only(job_id: str):
     """Gera apenas o roteiro (LLM), sem áudio"""
+    import asyncio
     from backend.workers.podcast_worker import generate_script_only
 
     db = SessionLocal()
@@ -79,15 +79,15 @@ def run_generate_script_only(job_id: str):
 
         logger.info(f"[ScriptOnly] Job {job_id} encontrado, status: {job.status}")
 
-        import asyncio
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Usar asyncio.run() que cria e fecha o loop automaticamente
         try:
-            result = loop.run_until_complete(generate_script_only({}, job_id))
+            result = asyncio.run(generate_script_only({}, job_id))
             logger.info(f"[ScriptOnly] Roteiro gerado para job {job_id}")
-        finally:
-            loop.close()
+        except Exception as run_err:
+            logger.error(
+                f"[ScriptOnly] Erro ao executar generate_script_only {job_id}: {run_err}"
+            )
+            raise
 
     except Exception as e:
         logger.error(f"[ScriptOnly] Erro ao gerar roteiro {job_id}: {e}")
@@ -98,10 +98,9 @@ def run_generate_script_only(job_id: str):
                 job.error_message = str(e)
                 db.commit()
         except Exception:
-            pass
+            logger.error("[ScriptOnly] Erro ao atualizar status failed")
     finally:
-        if db:
-            db.close()
+        db.close()
 
 
 class JobCreate(BaseModel):
@@ -142,9 +141,26 @@ async def create_job(job_data: JobCreate, db: Session = Depends(get_db)):
 
 @router.get("/history")
 async def get_job_history(
-    limit: int = Query(default=20, le=100), db: Session = Depends(get_db)
+    limit: int = Query(default=20, le=100),
+    q: str = "",
+    category: str = "",
+    playlist: str = "",
+    favorites: bool = False,
+    db: Session = Depends(get_db),
 ):
-    jobs = db.query(Job).order_by(Job.created_at.desc()).limit(limit).all()
+    """Retorna histórico de jobs com filtros opcionais (q, category, playlist, favorites)."""
+    query = db.query(Job)
+
+    if q:
+        query = query.filter(Job.title.ilike(f"%{q}%"))
+    if category:
+        query = query.filter(Job.category == category)
+    if playlist:
+        query = query.filter(Job.playlist == playlist)
+    if favorites:
+        query = query.filter(Job.is_favorite == True)  # noqa: E712
+
+    jobs = query.order_by(Job.created_at.desc()).limit(limit).all()
 
     return {
         "jobs": [
@@ -155,6 +171,10 @@ async def get_job_history(
                 "progress": j.progress,
                 "duration_seconds": j.duration_seconds,
                 "llm_mode": j.llm_mode,
+                "category": j.category,
+                "tags": j.tags,
+                "is_favorite": j.is_favorite,
+                "playlist": j.playlist,
                 "created_at": j.created_at.isoformat() if j.created_at else None,
             }
             for j in jobs
@@ -222,7 +242,7 @@ async def start_job(
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
 
-    if job.status not in ["PENDING", "SCRIPT_DONE", "FAILED"]:
+    if job.status not in ["PENDING", "QUEUED", "FAILED"]:
         raise HTTPException(status_code=400, detail=f"Status inválido: {job.status}")
 
     # Atualiza status e retorna imediatamente
@@ -261,34 +281,6 @@ async def generate_script_only(
 
     logger.info(f"Job {job_id} enviado para geração de roteiro")
     return {"status": "script_queued", "job_id": job_id}
-
-
-@router.post("/{job_id}/cancel")
-async def start_tts(job_id: str, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job não encontrado")
-
-    if job.status != "SCRIPT_DONE":
-        raise HTTPException(
-            status_code=400, detail=f"Status deve ser SCRIPT_DONE, atual: {job.status}"
-        )
-
-    from arq import create_pool
-    from workers.podcast_worker import WorkerSettings
-
-    try:
-        redis = await create_pool(WorkerSettings.redis_settings)
-        await redis.enqueue_job("start_tts_job", job_id)
-
-        job.status = "TTS_QUEUED"
-        job.current_step = "TTS enfileirado"
-        db.commit()
-
-        return {"status": "queued", "job_id": job_id}
-    except Exception as e:
-        logger.error(f"Erro ao enfileirar TTS: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{job_id}/stream")
@@ -382,12 +374,23 @@ async def cancel_job(job_id: str, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado")
 
-    if job.status in ["DONE", "FAILED"]:
+    if job.status in ["DONE", "FAILED", "CANCELLED"]:
         raise HTTPException(status_code=400, detail=f"Job já finalizado: {job.status}")
 
-    job.status = "FAILED"
+    job.status = "CANCELLED"
     job.error_message = "Cancelado pelo usuário"
     db.commit()
+
+    try:
+        import redis
+
+        r = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
+        job_key = f"arq:job:{job_id}"
+        queue_key = f"arq:queue:default"
+        r.delete(job_key)
+        logger.info(f"Job {job_id} removido do Redis")
+    except Exception as e:
+        logger.warning(f"Não foi possível cancelar job no Redis: {e}")
 
     return {"status": "cancelled", "job_id": job_id}
 
@@ -431,44 +434,3 @@ async def update_job(job_id: str, update: JobUpdate, db: Session = Depends(get_d
 
     db.commit()
     return {"status": "updated", "job_id": job_id}
-
-
-@router.get("/history")
-async def get_job_history_search(
-    q: str = "",
-    category: str = "",
-    playlist: str = "",
-    favorites: bool = False,
-    limit: int = 50,
-    db: Session = Depends(get_db),
-):
-    query = db.query(Job)
-
-    if q:
-        query = query.filter(Job.title.ilike(f"%{q}%"))
-    if category:
-        query = query.filter(Job.category == category)
-    if playlist:
-        query = query.filter(Job.playlist == playlist)
-    if favorites:
-        query = query.filter(Job.is_favorite == True)
-
-    jobs = query.order_by(Job.created_at.desc()).limit(limit).all()
-
-    return {
-        "jobs": [
-            {
-                "id": j.id,
-                "title": j.title,
-                "status": j.status,
-                "progress": j.progress,
-                "duration_seconds": j.duration_seconds,
-                "category": j.category,
-                "tags": j.tags,
-                "is_favorite": j.is_favorite,
-                "playlist": j.playlist,
-                "created_at": j.created_at.isoformat() if j.created_at else None,
-            }
-            for j in jobs
-        ]
-    }

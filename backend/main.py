@@ -3,15 +3,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 import logging
+import logging.handlers
 from pathlib import Path
 from backend.config import settings
 from backend.database import init_db
-from backend.routers import jobs, upload, health, ocr
+from backend.routers import jobs, upload, health, ocr, config
+
+# Garante que o diretório de logs existe
+Path(settings.LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler(settings.LOG_FILE), logging.StreamHandler()],
+    handlers=[
+        logging.handlers.RotatingFileHandler(
+            settings.LOG_FILE,
+            maxBytes=10 * 1024 * 1024,  # 10 MB por arquivo
+            backupCount=5,  # mantém até 5 arquivos antigos
+            encoding="utf-8",
+        ),
+        logging.StreamHandler(),
+    ],
 )
 logger = logging.getLogger(__name__)
 
@@ -29,7 +41,7 @@ app = FastAPI(title=settings.PROJECT_NAME, version=settings.VERSION, lifespan=li
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -39,6 +51,7 @@ app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 app.include_router(upload.router, prefix="/upload", tags=["upload"])
 app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(ocr.router, prefix="/ocr", tags=["ocr"])
+app.include_router(config.router, tags=["config"])
 
 
 @app.get("/")
@@ -49,12 +62,18 @@ async def root():
 @app.get("/audio/{filepath:path}")
 async def serve_audio(filepath: str):
     base_dir = Path(__file__).resolve().parent.parent
-    audio_path = base_dir / "data" / "output" / filepath
+    output_dir = (base_dir / "data" / "output").resolve()
+    audio_path = (output_dir / filepath).resolve()
+
+    # Proteção contra path traversal: garante que o arquivo está dentro de output/
+    if not str(audio_path).startswith(str(output_dir)):
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
     if not audio_path.exists():
-        return {"error": "Arquivo não encontrado", "path": str(audio_path)}
-    return FileResponse(
-        audio_path, media_type="audio/mpeg", filename=filepath.split("/")[-1]
-    )
+        return {"error": "Arquivo não encontrado"}
+    return FileResponse(audio_path, media_type="audio/mpeg", filename=audio_path.name)
 
 
 @app.get("/download/{job_id}")

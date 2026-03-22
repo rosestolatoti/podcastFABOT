@@ -4,15 +4,12 @@ import { persist } from 'zustand/middleware';
 const useJobStore = create(
   persist(
     (set, get) => ({
-      // Job atual
       currentJobId: null,
       currentJob: null,
       
-      // SSE
       sseConnected: false,
       sseError: null,
       
-      // Serviços (health check)
       services: {
         kokoro: 'unknown',
         redis: 'unknown',
@@ -20,25 +17,22 @@ const useJobStore = create(
         backend: 'up',
       },
       
-      // Vozes disponíveis
       availableVoices: [],
       ptbrVoices: [],
       
-      // Histórico
       jobHistory: [],
       
-      // UI state
       activeTab: 'roteiro',
       historyOpen: false,
       inputTab: 'arquivos',
       llmMode: 'gemini-2.5-flash',
       
-      // Progresso
       progress: 0,
       progressMessage: '',
       progressError: false,
       
-      // Actions
+      activeJobs: [],
+      
       setCurrentJob: (job) => set({ currentJob: job }),
       setCurrentJobId: (id) => set({ currentJobId: id }),
       
@@ -78,6 +72,20 @@ const useJobStore = create(
         progressMessage: '',
         progressError: false 
       }),
+      
+      addActiveJob: (job) => set((state) => ({
+        activeJobs: [...state.activeJobs.filter(j => j.id !== job.id), job]
+      })),
+      
+      updateActiveJob: (jobId, updates) => set((state) => ({
+        activeJobs: state.activeJobs.map(j => 
+          j.id === jobId ? { ...j, ...updates } : j
+        )
+      })),
+      
+      removeActiveJob: (jobId) => set((state) => ({
+        activeJobs: state.activeJobs.filter(j => j.id !== jobId)
+      })),
       
       reset: () => set({
         currentJobId: null,

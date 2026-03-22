@@ -15,6 +15,8 @@ class JobStatus:
     POST_PRODUCTION = "POST_PRODUCTION"
     DONE = "DONE"
     FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+    QUEUED = "QUEUED"
 
 
 class Job(Base):
@@ -74,3 +76,34 @@ class File(Base):
     status = Column(String(20), default="pending")
 
     job = relationship("Job", back_populates="files")
+
+
+class UserConfig(Base):
+    __tablename__ = "user_config"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    is_active = Column(Boolean, default=True)
+
+    usuario_nome = Column(String(100), nullable=True)
+
+    pessoas_proximas = Column(Text, nullable=True)
+
+    apresentador_nome = Column(String(100), nullable=True)
+    apresentador_voz = Column(String(50), nullable=True)
+
+    apresentadora_nome = Column(String(100), nullable=True)
+    apresentadora_voz = Column(String(50), nullable=True)
+
+    personagens = Column(Text, nullable=True)
+    empresas = Column(Text, nullable=True)
+
+    saudar_nome = Column(Boolean, default=True)
+    mencionar_pessoas = Column(Boolean, default=True)
+    despedida_personalizada = Column(Boolean, default=True)
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )

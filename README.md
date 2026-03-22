@@ -50,23 +50,41 @@ O FABOT é um sistema que transforma textos e documentos em podcasts educacionai
 
 ## 🎤 Personagens e Vozes
 
-O FABOT usa 3 vozes diferentes para criar diálogos naturais:
+O FABOT usa 3 vozes FIXAS para criar diálogos naturais:
 
 | Personagem | Voz Edge TTS | Cor na Interface | Descrição |
 |-----------|--------------|-------------------|------------|
 | **NARRADORA** | ThalitaMultilingualNeural | 🔴 Vermelho | APRESENTA o tema, faz introduções e transições |
 | **WILLIAM** | AntonioNeural | 🔵 Azul | FAZ PERGUNTAS, representa o ouvinte curioso |
-| **CRISTINA** | FranciscaNeural | 🩷 Rosa | EXPLICA os conceitos, é a "professora" |
+| **VILMA** | FranciscaNeural | 🩷 Rosa | EXPLICA os conceitos, é a "professora" |
+
+### Personagens vs Apresentadores
+
+**Personagens FIXOS (voz não muda):**
+- NARRADORA (Thalita) - só na introdução
+- WILLIAM (Antonio) - voz masculina
+- VILMA (Francisca) - voz feminina
+
+**Apresentadores (nomes que podem mudar):**
+- Host = WILLIAM (pode mudar nome, voz NÃO muda)
+- Co-host = VILMA (pode mudar nome, voz NÃO muda)
 
 ### Estrutura do Roteiro
 
 Cada episódio segue uma estrutura didática:
 
-1. **NARRADORA** → Introduz o tema
+1. **NARRADORA** → Introduz o tema (ex: "Olá Vanda!")
 2. **WILLIAM** → Faz pergunta sobre o conceito
-3. **CRISTINA** → Explica com exemplos e analogias
+3. **VILMA** → Explica com exemplos e analogias
 4. (Repete esse padrão durante todo o episódio)
-5. **NARRADORA** → Faz transição para próximo episódio
+5. **NARRADORA** → Faz despedida (ex: "Até o próximo episódio, Vanda!")
+
+### Personalização Automática
+
+Quando configurado no ConfigPanel (⚙️):
+- NARRADOR saúda pelo nome do ouvinte
+- WILLIAM/VILMA mencionam pessoas próximas nos exemplos
+- Encerramento personalizado com nome do ouvinte
 
 ---
 
@@ -419,6 +437,269 @@ docker-compose up -d
 
 ## 📜 Histórico de Atualizações
 
+### 20/03/2026 - Sistema de Personalização Completo 🎉
+
+**NOVO RECURSO: ConfigPanel - Personalização Total do Podcast**
+
+O FABOT agora permite personalizar completamente cada podcast através do botão ⚙️ no cabeçalho.
+
+#### O que pode ser personalizado:
+
+1. **Quem vai ouvir (Aluno/Ouvinte)**
+   - Nome da pessoa que vai ouvir o podcast
+   - Este nome é usado para saudações personalizadas no roteiro
+
+2. **Pessoas Próximas (Afetivo)**
+   - Lista de pessoas próximas (mãe, pai, esposa, filho, etc.)
+   - Usadas em exemplos durante o podcast
+   - Exemplo: "Célia, sua mãe, sabe como é importante controlar o estoque"
+
+3. **Apresentadores (Host e Co-host)**
+   - Nomes podem ser alterados
+   - Vozes são FIXAS (não mudam):
+     - NARRADORA = Thalita (voz feminina)
+     - WILLIAM = Antonio (voz masculina)
+     - VILMA = Francisca (voz feminina)
+   
+4. **Personagens de Exemplo**
+   - Lista de personagens fictícios para usar nos exemplos
+   - Formato: Nome - Cargo - Empresa
+   - Exemplo: Luciano Hang - CEO - Havan
+
+5. **Empresas**
+   - Lista de empresas reais para usar nos exemplos
+   - Exemplo: Havan, Magazine Luiza, Nubank, Itaú
+
+6. **Opções**
+   - Saudar pelo nome no início
+   - Mencionar pessoas próximas
+   - Despedida personalizada
+
+#### Como funciona:
+
+1. Clique em ⚙️ (Config) no cabeçalho
+2. Configure os nomes e opções
+3. Clique em "Salvar Configuração"
+4. Os 3 cards na coluna central mostram os apresentadores configurados
+5. Ao gerar um podcast, o roteiro será personalizado automaticamente
+
+#### Fluxo de personalização:
+
+```
+ConfigPanel → Salvar → Redis/Banco
+                           ↓
+                   load_config_variables()
+                           ↓
+                   Template v6 + Jinja2
+                           ↓
+                   Roteiro Personalizado
+```
+
+#### Arquivos principais:
+
+- `frontend/src/components/ConfigPanel.jsx` - Interface de configuração
+- `backend/routers/config.py` - API de configuração
+- `backend/prompts/script_template_v6.py` - Template com variáveis Jinja2
+- `backend/services/llm.py` - Injeção de variáveis no prompt
+
+---
+
+### 20/03/2026 - Template v6 com Jinja2
+
+**Substituição do Template v5 pelo v6**
+
+O novo template usa Jinja2 para injetar variáveis de configuração diretamente no prompt.
+
+#### Variáveis disponíveis:
+
+```python
+{
+    "usuario_nome": "Vanda",           # Quem vai ouvir
+    "pessoas_proximas": [              # Pessoas para exemplos
+        {"nome": "Célia", "relacao": "mãe"}
+    ],
+    "host_nome": "William",            # Nome do apresentador
+    "cohost_nome": "Vilma",            # Nome da apresentadora
+    "personagens": [                   # Personagens de exemplo
+        {"nome": "Luciano Hang", "cargo": "CEO", "empresa": "Havan"}
+    ],
+    "empresas": ["Havan", "Magazine Luiza"],  # Empresas de exemplo
+    "saudar_nome": True,               # Saudar pelo nome
+    "mencionar_pessoas": True,         # Mencionar pessoas próximas
+    "despedida_personalizada": True    # Despedida com nome
+}
+```
+
+#### Exemplo de prompt personalizado:
+
+```
+NARRADOR: "Olá Vanda! Um abraço especial para Célia também!"
+WILLIAM: "Vanda, você sabia que a precificação correta..."
+VILMA: "Sim, e para isso a Havan precisa entender..."
+```
+
+---
+
+### 20/03/2026 - Bug do Cache Corrigido 🔴 CRÍTICO
+
+**PROBLEMA CRÍTICO: Cache Redis não incluía variáveis de configuração**
+
+O cache do LLM usava apenas o hash do texto de entrada para gerar a chave.
+Quando o usuário mudava a configuração (ex: Cristina → Vilma) e gerava
+um podcast com o MESMO texto, o Redis retornava o roteiro antigo cacheado.
+
+**Causa raiz:**
+```python
+# ANTES (ERRADO):
+text_hash = compute_text_hash(text)
+config_hash = compute_config_hash(config)  # config NÃO tinha as variáveis do banco!
+cached = cache_manager.get(text_hash, config_hash)
+```
+
+**Solução:**
+```python
+# DEPOIS (CORRETO):
+config_vars = load_config_variables()  # Carrega do banco ANTES
+text_hash = compute_text_hash(text)
+config_hash = compute_config_hash({**config, **config_vars})  # Inclui variáveis!
+cached = cache_manager.get(text_hash, config_hash)
+```
+
+**Arquivo corrigido:** `backend/services/llm.py`
+
+---
+
+### 20/03/2026 - Bug do Pydantic Serialization
+
+**PROBLEMA: Objetos Pydantic não são JSON serializáveis**
+
+Ao salvar configuração com personagens/pessoas_proximas, o backend retornava
+Internal Server Error porque `json.dumps()` não funciona com objetos Pydantic.
+
+**Causa:**
+```python
+# ERRO:
+config.personagens = json.dumps(data.personagens)  # data.personagens é lista de Pydantic models!
+```
+
+**Solução:**
+```python
+# CORRETO:
+config.personagens = json.dumps([p.model_dump() for p in data.personagens])
+```
+
+**Arquivos corrigidos:**
+- `backend/routers/config.py` - Linhas 89, 103
+
+---
+
+### 20/03/2026 - Voz Vilma Adicionada
+
+**PROBLEMA: Nome Cristina hardcoded no fabot_tts.py**
+
+O mapeamento de vozes não tinha Vilma, então o TTS usava William como fallback.
+
+**Solução:** Adicionado mapeamento para Vilma:
+```python
+VOICES = {
+    "NARRADOR": {"voice": "pt-BR-ThalitaMultilingualNeural"},
+    "William": {"voice": "pt-BR-AntonioNeural"},
+    "Vilma": {"voice": "pt-BR-FranciscaNeural"},  # Adicionado!
+}
+```
+
+**Arquivo corrigido:** `backend/services/fabot_tts.py`
+
+---
+
+### 20/03/2026 - Worker ARQ Entry Point
+
+**PROBLEMA: docker-compose.yml apontava para módulo sem entry point**
+
+O comando `python -m backend.workers.podcast_worker` não funcionava porque
+o arquivo não tinha `__main__.py`.
+
+**Solução:** Criado `backend/workers/__main__.py` com entry point correto.
+
+---
+
+### 20/03/2026 - Bug do jobId no Catch
+
+**PROBLEMA: Variável jobId declarada com let dentro do try**
+
+Se ocorresse erro antes da atribuição, o catch tentava `updateActiveJob(undefined)`.
+
+**Solução:**
+```javascript
+// ANTES (ERRADO):
+try {
+    let jobId;  // ← pode falhar antes da atribuição
+    ...
+} catch (error) {
+    if (jobId) updateActiveJob(jobId, ...);  // ← undefined aqui!
+}
+
+// DEPOIS (CORRETO):
+let jobId = null;  // ← inicializado
+try {
+    ...
+} catch (error) {
+    if (jobId) updateActiveJob(jobId, ...);  // ← funciona
+} finally {
+    if (!jobId) console.warn("Job não foi criado");
+}
+```
+
+**Arquivo corrigido:** `frontend/src/App.jsx`
+
+---
+
+### 20/03/2026 - LocalStorage com Job Inexistente
+
+**PROBLEMA: currentJobId persistido mas job deletado do banco**
+
+Ao reabrir a página, o frontend tentava buscar um job que não existia mais.
+
+**Solução:** Tratamento de 404 no useEffect que carrega currentJob.
+
+**Arquivo corrigido:** `frontend/src/App.jsx`
+
+---
+
+### 20/03/2026 - Frontend: 3 Cards de Apresentadores
+
+**NOVO RECURSO: Visualização instantânea da configuração**
+
+Quando não há roteiro carregado, a coluna central mostra 3 cards com
+os nomes dos apresentadores configurados.
+
+**Benefício:** Permite verificar se a configuração está correta sem
+precisar gerar um podcast apenas para confirmar.
+
+**Implementação:**
+```jsx
+// ScriptPanel.jsx - Quando !hasScript
+<div className="presenter-preview">
+  <div className="presenter-card narrador">
+    <div className="presenter-icon">🎤</div>
+    <div className="presenter-name">NARRADORA</div>
+    <div className="presenter-role">Voz de abertura</div>
+  </div>
+  <div className="presenter-card host">
+    <div className="presenter-icon">🎙️</div>
+    <div className="presenter-name">{config?.apresentador?.nome || "WILLIAM"}</div>
+    <div className="presenter-role">Apresentador</div>
+  </div>
+  <div className="presenter-card cohost">
+    <div className="presenter-icon">🎙️</div>
+    <div className="presenter-name">{config?.apresentadora?.nome || "CRISTINA"}</div>
+    <div className="presenter-role">Apresentadora</div>
+  </div>
+</div>
+```
+
+---
+
 ### 18/03/2026 - Correção Crítica do Edge TTS 🔴
 
 **PROBLEMA CRÍTICO DESCOBERTO:**
@@ -489,7 +770,7 @@ if job.status not in ("SCRIPT_DONE", "TTS_QUEUED"):
 ### 17/03/2026 - Interface Reformulada
 
 - ScriptPanel com caixas editáveis por fala
-- Cores por personagem (NARRADORA=Vermelho, WILLIAM=Azul, CRISTINA=Rosa)
+- Cores por personagem (NARRADORA=Vermelho, WILLIAM=Azul, CRISTINA=Vilma=Rosa)
 - Sistema de favoritos
 - Busca no histórico
 - Modo escuro

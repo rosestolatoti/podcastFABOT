@@ -14,9 +14,110 @@ from jinja2 import Template
 from pydantic import BaseModel, ValidationError, field_validator
 
 from backend.prompts.script_template_v5 import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
+from backend.prompts.script_template_v6 import (
+    SYSTEM_PROMPT_TEMPLATE,
+    USER_PROMPT_TEMPLATE as USER_PROMPT_TEMPLATE_V6,
+)
+
+SYSTEM_PROMPT_V6 = Template(SYSTEM_PROMPT_TEMPLATE)
+USER_PROMPT_V6 = Template(USER_PROMPT_TEMPLATE_V6)
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def load_config_variables() -> dict:
+    """Carrega variáveis do ConfigPanel para injetar no prompt"""
+    try:
+        from backend.database import SessionLocal
+        from backend.models import UserConfig
+        import json
+
+        db = SessionLocal()
+        config = db.query(UserConfig).filter(UserConfig.is_active == True).first()
+        db.close()
+
+        if not config:
+            return {}
+
+        pessoas = []
+        if config.pessoas_proximas:
+            try:
+                pessoas_data = json.loads(str(config.pessoas_proximas))
+                pessoas = pessoas_data if isinstance(pessoas_data, list) else []
+            except Exception:
+                pessoas = []
+
+        personagens = []
+        if config.personagens:
+            try:
+                personagens_data = json.loads(str(config.personagens))
+                personagens = (
+                    personagens_data if isinstance(personagens_data, list) else []
+                )
+            except Exception:
+                personagens = []
+
+        empresas = []
+        if config.empresas:
+            try:
+                empresas = json.loads(str(config.empresas))
+                empresas = empresas if isinstance(empresas, list) else []
+            except Exception:
+                empresas = []
+
+        host_nome = config.apresentador_nome or ""
+        cohost_nome = config.apresentadora_nome or ""
+
+        host_genero = (
+            "M"
+            if host_nome.lower()
+            in ["william", "antonio", "daniel", "pedro", "marcos", "joao"]
+            else "F"
+        )
+        cohost_genero = (
+            "F"
+            if cohost_nome.lower()
+            in [
+                "cristina",
+                "vilma",
+                "debora",
+                "francisca",
+                "ana",
+                "maria",
+                "lucia",
+                "patricia",
+            ]
+            else "M"
+        )
+
+        return {
+            "usuario_nome": config.usuario_nome or "",
+            "pessoas_proximas": pessoas,
+            "pessoas_proximas_str": ", ".join(
+                [f"{p.get('nome', '')} ({p.get('relacao', '')})" for p in pessoas[:3]]
+            )
+            if pessoas
+            else "",
+            "host_nome": host_nome,
+            "host_genero": host_genero,
+            "cohost_nome": cohost_nome,
+            "cohost_genero": cohost_genero,
+            "personagens": personagens,
+            "empresas": empresas,
+            "saudar_nome": config.saudar_nome
+            if config.saudar_nome is not None
+            else True,
+            "mencionar_pessoas": config.mencionar_pessoas
+            if config.mencionar_pessoas is not None
+            else True,
+            "despedida_personalizada": config.despedida_personalizada
+            if config.despedida_personalizada is not None
+            else True,
+        }
+    except Exception as e:
+        logger.warning(f"Erro ao carregar config: {e}")
+        return {}
 
 
 class SegmentSchema(BaseModel):
@@ -114,6 +215,41 @@ def compute_config_hash(config: dict) -> str:
     return hashlib.sha256(config_str.encode()).hexdigest()
 
 
+def parse_llm_json(response_text: str) -> dict:
+    """
+    Parse JSON da resposta do LLM com limpeza automática.
+    LLMs às vezes retornam JSON com markdown ou texto antes/depois.
+    """
+    if not response_text:
+        raise ValueError("Resposta do LLM está vazia")
+
+    text = response_text.strip()
+
+    text = re.sub(r"^```json\s*", "", text)
+    text = re.sub(r"^```\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    text = text.strip()
+
+    try:
+        data = json.loads(text)
+        if "segments" in data and len(data.get("segments", [])) > 0:
+            return data
+    except json.JSONDecodeError:
+        pass
+
+    json_match = re.search(r"\{[\s\S]*\}", text)
+    if json_match:
+        try:
+            data = json.loads(json_match.group())
+            if "segments" in data and len(data.get("segments", [])) > 0:
+                logger.info("JSON extraído com regex — resposta tinha texto extra")
+                return data
+        except json.JSONDecodeError:
+            pass
+
+    raise ValueError(f"Não foi possível extrair JSON válido da resposta do LLM")
+
+
 def validate_script_response(data: dict) -> ScriptSchema:
     try:
         return ScriptSchema(**data)
@@ -176,15 +312,19 @@ class GroqProvider(LLMProvider):
             return False
 
     async def generate_script(self, text: str, config: dict) -> dict:
+        config_vars = load_config_variables()
+
         text_hash = compute_text_hash(text)
-        config_hash = compute_config_hash(config)
+        config_hash = compute_config_hash({**config, **config_vars})
 
         cached = cache_manager.get(text_hash, config_hash)
         if cached:
             logger.info("Usando resultado em cache para este texto")
             return cached
 
-        user_prompt = USER_PROMPT_TEMPLATE.render(
+        system_prompt = SYSTEM_PROMPT_V6.render(**config_vars)
+
+        user_prompt = USER_PROMPT_V6.render(
             text=text[:15000],
             target_duration=config.get("target_duration", 10),
             depth_level=config.get("depth_level", "normal"),
@@ -195,10 +335,11 @@ class GroqProvider(LLMProvider):
             total_episodes=config.get("total_episodes", 1),
             section_title=config.get("section_title", "Introdução"),
             context=None,
+            **config_vars,
         )
 
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
 
@@ -239,10 +380,10 @@ class GroqProvider(LLMProvider):
                         content = result["choices"][0]["message"]["content"]
 
                         try:
-                            script_data = json.loads(content)
-                        except json.JSONDecodeError as e:
-                            logger.error(f"JSON inválido retornado: {e}")
-                            raise ValueError(f"Resposta do LLM não é JSON válido")
+                            script_data = parse_llm_json(content)
+                        except ValueError as e:
+                            logger.error(f"JSON inválido: {e}")
+                            continue
 
                         script = validate_script_response(script_data)
                         script_dict = script.model_dump()
@@ -290,15 +431,19 @@ class GeminiProvider(LLMProvider):
             return False
 
     async def generate_script(self, text: str, config: dict) -> dict:
+        config_vars = load_config_variables()
+
         text_hash = compute_text_hash(text)
-        config_hash = compute_config_hash(config)
+        config_hash = compute_config_hash({**config, **config_vars})
 
         cached = cache_manager.get(text_hash, config_hash)
         if cached:
             logger.info("Usando resultado em cache para este texto")
             return cached
 
-        user_prompt = USER_PROMPT_TEMPLATE.render(
+        system_prompt = SYSTEM_PROMPT_V6.render(**config_vars)
+
+        user_prompt = USER_PROMPT_V6.render(
             text=text[:15000],
             target_duration=config.get("target_duration", 10),
             depth_level=config.get("depth_level", "normal"),
@@ -309,9 +454,10 @@ class GeminiProvider(LLMProvider):
             total_episodes=config.get("total_episodes", 1),
             section_title=config.get("section_title", "Introdução"),
             context=None,
+            **config_vars,
         )
 
-        full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}\n\nRetorne APENAS o JSON válido, sem markdown ou outros textos."
+        full_prompt = f"{system_prompt}\n\n{user_prompt}\n\nRetorne APENAS o JSON válido, sem markdown ou outros textos."
 
         for attempt in range(3):
             try:
@@ -334,16 +480,11 @@ class GeminiProvider(LLMProvider):
 
                         result = await resp.json()
                         content = result["candidates"][0]["content"]["parts"][0]["text"]
-                        
-                        # Extrair JSON do markdown se necessário
-                        json_match = re.search(r'\{[\s\S]*\}', content)
-                        if json_match:
-                            content = json_match.group()
-                        
+
                         try:
-                            script_data = json.loads(content)
-                        except json.JSONDecodeError as e:
-                            logger.error(f"JSON inválido retornado: {e}")
+                            script_data = parse_llm_json(content)
+                        except ValueError as e:
+                            logger.warning(f"JSON inválido: {e}")
                             continue
 
                         script = validate_script_response(script_data)
@@ -383,15 +524,19 @@ class OllamaProvider(LLMProvider):
             return False
 
     async def generate_script(self, text: str, config: dict) -> dict:
+        config_vars = load_config_variables()
+
         text_hash = compute_text_hash(text)
-        config_hash = compute_config_hash(config)
+        config_hash = compute_config_hash({**config, **config_vars})
 
         cached = cache_manager.get(text_hash, config_hash)
         if cached:
             logger.info("Usando resultado em cache para este texto")
             return cached
 
-        user_prompt = USER_PROMPT_TEMPLATE.render(
+        system_prompt = SYSTEM_PROMPT_V6.render(**config_vars)
+
+        user_prompt = USER_PROMPT_V6.render(
             text=text[:15000],
             target_duration=config.get("target_duration", 10),
             depth_level=config.get("depth_level", "normal"),
@@ -402,9 +547,10 @@ class OllamaProvider(LLMProvider):
             total_episodes=config.get("total_episodes", 1),
             section_title=config.get("section_title", "Introdução"),
             context=None,
+            **config_vars,
         )
 
-        full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}\n\nRetorne APENAS o JSON."
+        full_prompt = f"{system_prompt}\n\n{user_prompt}\n\nRetorne APENAS o JSON."
 
         for attempt in range(3):
             try:
@@ -428,9 +574,9 @@ class OllamaProvider(LLMProvider):
                         content = result.get("response", "")
 
                         try:
-                            script_data = json.loads(content)
-                        except json.JSONDecodeError as e:
-                            logger.error(f"JSON inválido retornado: {e}")
+                            script_data = parse_llm_json(content)
+                        except ValueError as e:
+                            logger.warning(f"JSON inválido: {e}")
                             continue
 
                         script = validate_script_response(script_data)
@@ -458,23 +604,27 @@ class GLMProvider(LLMProvider):
     """Provedor GLM (ChatGLM) - Modelos gratuitos"""
 
     def __init__(self, model: str = "glm-4.7-flash"):
-        self.api_key = (
-            settings.GLM_API_KEY or "6b754c80b0a848909600eadaa4ee5818.yRm84RBqDH7ldPxY"
-        )
+        self.api_key = settings.GLM_API_KEY
+        if not self.api_key:
+            raise ValueError("GLM_API_KEY não configurada no arquivo .env")
         self.base_url = "https://open.bigmodel.cn/api/paas/v4"
         self.model = model
 
     async def generate_script(self, text: str, config: dict) -> dict:
         """Gera roteiro usando GLM"""
+        config_vars = load_config_variables()
+
         text_hash = compute_text_hash(text)
-        config_hash = compute_config_hash(config)
+        config_hash = compute_config_hash({**config, **config_vars})
 
         cached = cache_manager.get(text_hash, config_hash)
         if cached:
             logger.info("Usando cache GLM")
             return cached
 
-        user_prompt = USER_PROMPT_TEMPLATE.render(
+        system_prompt = SYSTEM_PROMPT_V6.render(**config_vars)
+
+        user_prompt = USER_PROMPT_V6.render(
             text=text,
             target_duration=config.get("target_duration", 10),
             depth_level=config.get("depth_level", "normal"),
@@ -485,6 +635,7 @@ class GLMProvider(LLMProvider):
             total_episodes=config.get("total_episodes", 1),
             section_title=config.get("section_title", "Introdução"),
             context=None,
+            **config_vars,
         )
 
         for attempt in range(3):
@@ -498,7 +649,7 @@ class GLMProvider(LLMProvider):
                     payload = {
                         "model": self.model,
                         "messages": [
-                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt},
                         ],
                         "temperature": 0.7,
@@ -521,11 +672,9 @@ class GLMProvider(LLMProvider):
                         content = result["choices"][0]["message"]["content"]
 
                         try:
-                            script_data = json.loads(content)
-                        except json.JSONDecodeError:
-                            logger.warning(
-                                f"GLM não retornou JSON válido: {content[:200]}"
-                            )
+                            script_data = parse_llm_json(content)
+                        except ValueError as e:
+                            logger.warning(f"JSON inválido: {e}")
                             continue
 
                         script = validate_script_response(script_data)

@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import StaticPool
 import os
@@ -16,6 +16,15 @@ engine = create_engine(
     poolclass=StaticPool,
 )
 
+
+@event.listens_for(engine, "connect")
+def set_wal_mode(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
+
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
@@ -31,5 +40,6 @@ def get_db():
 
 def init_db():
     from backend import models
+
     Base.metadata.create_all(bind=engine)
     logger.info(f"Banco de dados inicializado em: {settings.DATABASE_PATH}")

@@ -27,14 +27,17 @@ class Settings:
     OUTPUT_DIR = os.getenv("OUTPUT_DIR", str(BASE_DIR / "data" / "output"))
     UPLOAD_DIR = os.getenv("UPLOAD_DIR", str(BASE_DIR / "data" / "uploads"))
 
-    MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "50"))
+    try:
+        MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "50"))
+    except ValueError:
+        MAX_UPLOAD_MB = 50
 
     DEFAULT_LLM_MODE = os.getenv("DEFAULT_LLM_MODE", "glm")
 
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-    GLM_API_KEY = os.getenv("GLM_API_KEY", "6b754c80b0a848909600eadaa4ee5818")
+    GLM_API_KEY = os.getenv("GLM_API_KEY", "")
 
     CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
