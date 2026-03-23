@@ -34,7 +34,7 @@ def ingest_file_sync(file_path: Path) -> dict:
 async def upload_file(
     file: UploadFile = File(...),
     title: str = Form(...),
-    llm_mode: str = Form(default="groq"),
+    llm_mode: str = Form(default="gemini-2.5-flash"),
     voice_host: str = Form(default="pf_dora"),
     voice_cohost: str | None = Form(default=None),
     podcast_type: str = Form(default="monologue"),
@@ -113,7 +113,7 @@ async def upload_file(
 async def upload_paste(
     title: str,
     text: str,
-    llm_mode: str = "groq",
+    llm_mode: str = "gemini-2.5-flash",
     voice_host: str = "pf_dora",
     voice_cohost: str | None = None,
     podcast_type: str = "monologue",

@@ -35,7 +35,7 @@ class Job(Base):
     script_path = Column(String(500), nullable=True)
     duration_seconds = Column(Integer, nullable=True)
 
-    llm_mode = Column(String(20), default="groq")
+    llm_mode = Column(String(20), default="gemini-2.5-flash")
     voice_host = Column(String(50))
     voice_cohost = Column(String(50), nullable=True)
     podcast_type = Column(String(20), default="monologue")

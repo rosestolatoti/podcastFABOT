@@ -105,7 +105,7 @@ def run_generate_script_only(job_id: str):
 
 class JobCreate(BaseModel):
     title: str | None = None
-    llm_mode: str = "groq"
+    llm_mode: str = "gemini-2.5-flash"
     voice_host: str = "pf_dora"
     voice_cohost: str | None = None
     podcast_type: str = "monologue"

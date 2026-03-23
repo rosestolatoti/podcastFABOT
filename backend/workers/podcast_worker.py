@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class JobConfig(BaseModel):
     job_id: str
     text: str
-    llm_mode: str = "groq"
+    llm_mode: str = "gemini-2.5-flash"
     voice_host: str = "pf_dora"
     voice_cohost: str | None = None
     podcast_type: str = "monologue"

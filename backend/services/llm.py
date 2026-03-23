@@ -13,14 +13,20 @@ import redis
 from jinja2 import Template
 from pydantic import BaseModel, ValidationError, field_validator
 
-from backend.prompts.script_template_v5 import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
 from backend.prompts.script_template_v6 import (
     SYSTEM_PROMPT_TEMPLATE,
     USER_PROMPT_TEMPLATE as USER_PROMPT_TEMPLATE_V6,
 )
+from backend.prompts.script_template_v7 import (
+    SYSTEM_PROMPT_TEMPLATE as SYSTEM_PROMPT_TEMPLATE_V7,
+    USER_PROMPT_TEMPLATE as USER_PROMPT_TEMPLATE_V7,
+)
+from backend.prompts.prompt_variator import gerar_variacoes
 
 SYSTEM_PROMPT_V6 = Template(SYSTEM_PROMPT_TEMPLATE)
 USER_PROMPT_V6 = Template(USER_PROMPT_TEMPLATE_V6)
+SYSTEM_PROMPT_V7 = Template(SYSTEM_PROMPT_TEMPLATE_V7)
+USER_PROMPT_V7 = Template(USER_PROMPT_TEMPLATE_V7)
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
@@ -289,127 +295,6 @@ class LLMProvider:
         raise NotImplementedError
 
 
-class GroqProvider(LLMProvider):
-    def __init__(self):
-        self.api_key = os.getenv("GROQ_API_KEY")
-        self.model = "llama-3.3-70b-versatile"
-        self.base_url = "https://api.groq.com/openai/v1/chat/completions"
-        self.max_retries = 3
-        self.retry_delays = [1, 2, 4]
-
-    async def health_check(self) -> bool:
-        if not self.api_key:
-            return False
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    "https://api.groq.com/openai/v1/models",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    timeout=aiohttp.ClientTimeout(total=5),
-                ) as resp:
-                    return resp.status == 200
-        except Exception:
-            return False
-
-    async def generate_script(self, text: str, config: dict) -> dict:
-        config_vars = load_config_variables()
-
-        text_hash = compute_text_hash(text)
-        config_hash = compute_config_hash({**config, **config_vars})
-
-        cached = cache_manager.get(text_hash, config_hash)
-        if cached:
-            logger.info("Usando resultado em cache para este texto")
-            return cached
-
-        system_prompt = SYSTEM_PROMPT_V6.render(**config_vars)
-
-        user_prompt = USER_PROMPT_V6.render(
-            text=text[:15000],
-            target_duration=config.get("target_duration", 10),
-            depth_level=config.get("depth_level", "normal"),
-            podcast_type=config.get("podcast_type", "monologue"),
-            voice_host=config.get("voice_host", ""),
-            voice_cohost=config.get("voice_cohost", ""),
-            episode_number=config.get("episode_number", 1),
-            total_episodes=config.get("total_episodes", 1),
-            section_title=config.get("section_title", "Introdução"),
-            context=None,
-            **config_vars,
-        )
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
-
-        last_error = None
-        for attempt in range(self.max_retries):
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        self.base_url,
-                        headers={
-                            "Authorization": f"Bearer {self.api_key}",
-                            "Content-Type": "application/json",
-                        },
-                        json={
-                            "model": self.model,
-                            "messages": messages,
-                            "temperature": 0.7,
-                            "max_tokens": 8000,
-                            "response_format": {"type": "json_object"},
-                        },
-                        timeout=aiohttp.ClientTimeout(total=120),
-                    ) as resp:
-                        if resp.status == 429:
-                            delay = self.retry_delays[
-                                min(attempt, len(self.retry_delays) - 1)
-                            ]
-                            logger.warning(
-                                f"Rate limit. Tentando novamente em {delay}s"
-                            )
-                            await asyncio.sleep(delay)
-                            continue
-
-                        if resp.status != 200:
-                            body = await resp.text()
-                            raise Exception(f"Groq API error: {resp.status} - {body}")
-
-                        result = await resp.json()
-                        content = result["choices"][0]["message"]["content"]
-
-                        try:
-                            script_data = parse_llm_json(content)
-                        except ValueError as e:
-                            logger.error(f"JSON inválido: {e}")
-                            continue
-
-                        script = validate_script_response(script_data)
-                        script_dict = script.model_dump()
-                        script_dict["generated_at"] = datetime.now(
-                            timezone.utc
-                        ).isoformat()
-                        script_dict["llm_provider"] = "groq"
-                        script_dict["llm_model"] = self.model
-
-                        cache_manager.set(text_hash, config_hash, script_dict)
-                        logger.info(
-                            f"Roteiro gerado com Groq: {len(script_dict.get('segments', []))} segmentos"
-                        )
-                        return script_dict
-
-            except Exception as e:
-                last_error = e
-                delay = self.retry_delays[min(attempt, len(self.retry_delays) - 1)]
-                logger.warning(
-                    f"Tentativa {attempt + 1} falhou: {e}. Retry em {delay}s"
-                )
-                await asyncio.sleep(delay)
-
-        raise Exception(f"Falha após {self.max_retries} tentativas: {last_error}")
-
-
 class GeminiProvider(LLMProvider):
     def __init__(self, model: str = "gemini-2.5-flash"):
         self.api_key = os.getenv("GEMINI_API_KEY")
@@ -433,34 +318,35 @@ class GeminiProvider(LLMProvider):
     async def generate_script(self, text: str, config: dict) -> dict:
         config_vars = load_config_variables()
 
-        text_hash = compute_text_hash(text)
-        config_hash = compute_config_hash({**config, **config_vars})
-
-        cached = cache_manager.get(text_hash, config_hash)
-        if cached:
-            logger.info("Usando resultado em cache para este texto")
-            return cached
-
-        system_prompt = SYSTEM_PROMPT_V6.render(**config_vars)
-
-        user_prompt = USER_PROMPT_V6.render(
-            text=text[:15000],
-            target_duration=config.get("target_duration", 10),
-            depth_level=config.get("depth_level", "normal"),
-            podcast_type=config.get("podcast_type", "monologue"),
-            voice_host=config.get("voice_host", ""),
-            voice_cohost=config.get("voice_cohost", ""),
-            episode_number=config.get("episode_number", 1),
-            total_episodes=config.get("total_episodes", 1),
-            section_title=config.get("section_title", "Introdução"),
-            context=None,
-            **config_vars,
+        episode_number = config.get("episode_number", 1)
+        variacoes = gerar_variacoes(
+            personagens=config_vars.get("personagens", []),
+            empresas=config_vars.get("empresas", []),
+            episode_number=episode_number,
         )
 
-        full_prompt = f"{system_prompt}\n\n{user_prompt}\n\nRetorne APENAS o JSON válido, sem markdown ou outros textos."
+        config_vars.update(variacoes)
 
         for attempt in range(3):
             try:
+                system_prompt = SYSTEM_PROMPT_V7.render(**config_vars)
+
+                user_prompt = USER_PROMPT_V7.render(
+                    text=text[:15000],
+                    target_duration=config.get("target_duration", 10),
+                    depth_level=config.get("depth_level", "normal"),
+                    podcast_type=config.get("podcast_type", "monologue"),
+                    voice_host=config.get("voice_host", ""),
+                    voice_cohost=config.get("voice_cohost", ""),
+                    episode_number=episode_number,
+                    total_episodes=config.get("total_episodes", 1),
+                    section_title=config.get("section_title", "Introdução"),
+                    context=None,
+                    **config_vars,
+                )
+
+                full_prompt = f"{system_prompt}\n\n{user_prompt}\n\nRetorne APENAS o JSON válido, sem markdown ou outros textos."
+
                 async with aiohttp.ClientSession() as session:
                     async with session.post(
                         self.base_url,
@@ -468,7 +354,8 @@ class GeminiProvider(LLMProvider):
                         json={
                             "contents": [{"parts": [{"text": full_prompt}]}],
                             "generationConfig": {
-                                "temperature": 0.7,
+                                "temperature": 0.88,
+                                "topP": 0.92,
                                 "maxOutputTokens": 32000,
                             },
                         },
@@ -494,10 +381,12 @@ class GeminiProvider(LLMProvider):
                         ).isoformat()
                         script_dict["llm_provider"] = "gemini"
                         script_dict["llm_model"] = self.model
+                        script_dict["variacao_id"] = variacoes.get("abertura", {}).get(
+                            "id", "unknown"
+                        )
 
-                        cache_manager.set(text_hash, config_hash, script_dict)
                         logger.info(
-                            f"Roteiro gerado com Gemini: {len(script_dict.get('segments', []))} segmentos"
+                            f"Roteiro gerado com Gemini (V7): {len(script_dict.get('segments', []))} segmentos - abertura: {variacoes.get('abertura', {}).get('id', 'unknown')}"
                         )
                         return script_dict
 
@@ -506,98 +395,6 @@ class GeminiProvider(LLMProvider):
                 await asyncio.sleep(2)
 
         raise Exception(f"Falha após 3 tentativas com Gemini")
-
-
-class OllamaProvider(LLMProvider):
-    def __init__(self):
-        self.base_url = settings.OLLAMA_URL
-        self.model = "llama3.1"
-
-    async def health_check(self) -> bool:
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self.base_url}/api/tags", timeout=aiohttp.ClientTimeout(total=5)
-                ) as resp:
-                    return resp.status == 200
-        except Exception:
-            return False
-
-    async def generate_script(self, text: str, config: dict) -> dict:
-        config_vars = load_config_variables()
-
-        text_hash = compute_text_hash(text)
-        config_hash = compute_config_hash({**config, **config_vars})
-
-        cached = cache_manager.get(text_hash, config_hash)
-        if cached:
-            logger.info("Usando resultado em cache para este texto")
-            return cached
-
-        system_prompt = SYSTEM_PROMPT_V6.render(**config_vars)
-
-        user_prompt = USER_PROMPT_V6.render(
-            text=text[:15000],
-            target_duration=config.get("target_duration", 10),
-            depth_level=config.get("depth_level", "normal"),
-            podcast_type=config.get("podcast_type", "monologue"),
-            voice_host=config.get("voice_host", ""),
-            voice_cohost=config.get("voice_cohost", ""),
-            episode_number=config.get("episode_number", 1),
-            total_episodes=config.get("total_episodes", 1),
-            section_title=config.get("section_title", "Introdução"),
-            context=None,
-            **config_vars,
-        )
-
-        full_prompt = f"{system_prompt}\n\n{user_prompt}\n\nRetorne APENAS o JSON."
-
-        for attempt in range(3):
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        f"{self.base_url}/api/generate",
-                        json={
-                            "model": self.model,
-                            "prompt": full_prompt,
-                            "format": "json",
-                            "stream": False,
-                            "options": {"temperature": 0.7},
-                        },
-                        timeout=aiohttp.ClientTimeout(total=180),
-                    ) as resp:
-                        if resp.status != 200:
-                            body = await resp.text()
-                            raise Exception(f"Ollama error: {resp.status} - {body}")
-
-                        result = await resp.json()
-                        content = result.get("response", "")
-
-                        try:
-                            script_data = parse_llm_json(content)
-                        except ValueError as e:
-                            logger.warning(f"JSON inválido: {e}")
-                            continue
-
-                        script = validate_script_response(script_data)
-                        script_dict = script.model_dump()
-                        script_dict["generated_at"] = datetime.now(
-                            timezone.utc
-                        ).isoformat()
-                        script_dict["llm_provider"] = "ollama"
-                        script_dict["llm_model"] = self.model
-
-                        cache_manager.set(text_hash, config_hash, script_dict)
-                        logger.info(
-                            f"Roteiro gerado com Ollama: {len(script_dict.get('segments', []))} segmentos"
-                        )
-                        return script_dict
-
-            except Exception as e:
-                logger.warning(f"Tentativa {attempt + 1} falhou: {e}")
-                await asyncio.sleep(2)
-
-        raise Exception(f"Falha após 3 tentativas com Ollama")
 
 
 class GLMProvider(LLMProvider):
@@ -611,35 +408,35 @@ class GLMProvider(LLMProvider):
         self.model = model
 
     async def generate_script(self, text: str, config: dict) -> dict:
-        """Gera roteiro usando GLM"""
         config_vars = load_config_variables()
 
-        text_hash = compute_text_hash(text)
-        config_hash = compute_config_hash({**config, **config_vars})
-
-        cached = cache_manager.get(text_hash, config_hash)
-        if cached:
-            logger.info("Usando cache GLM")
-            return cached
-
-        system_prompt = SYSTEM_PROMPT_V6.render(**config_vars)
-
-        user_prompt = USER_PROMPT_V6.render(
-            text=text,
-            target_duration=config.get("target_duration", 10),
-            depth_level=config.get("depth_level", "normal"),
-            voice_host=config.get("voice_host", "pm_alex"),
-            voice_cohost=config.get("voice_cohost", "pm_emily"),
-            podcast_type=config.get("podcast_type", "dialogue"),
-            episode_number=config.get("episode_number", 1),
-            total_episodes=config.get("total_episodes", 1),
-            section_title=config.get("section_title", "Introdução"),
-            context=None,
-            **config_vars,
+        episode_number = config.get("episode_number", 1)
+        variacoes = gerar_variacoes(
+            personagens=config_vars.get("personagens", []),
+            empresas=config_vars.get("empresas", []),
+            episode_number=episode_number,
         )
+
+        config_vars.update(variacoes)
 
         for attempt in range(3):
             try:
+                system_prompt = SYSTEM_PROMPT_V7.render(**config_vars)
+
+                user_prompt = USER_PROMPT_V7.render(
+                    text=text[:15000],
+                    target_duration=config.get("target_duration", 10),
+                    depth_level=config.get("depth_level", "normal"),
+                    voice_host=config.get("voice_host", ""),
+                    voice_cohost=config.get("voice_cohost", ""),
+                    podcast_type=config.get("podcast_type", "dialogue"),
+                    episode_number=episode_number,
+                    total_episodes=config.get("total_episodes", 1),
+                    section_title=config.get("section_title", "Introdução"),
+                    context=None,
+                    **config_vars,
+                )
+
                 async with aiohttp.ClientSession() as session:
                     headers = {
                         "Authorization": f"Bearer {self.api_key}",
@@ -652,7 +449,9 @@ class GLMProvider(LLMProvider):
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt},
                         ],
-                        "temperature": 0.7,
+                        "temperature": 0.88,
+                        "frequency_penalty": 0.4,
+                        "presence_penalty": 0.3,
                         "max_tokens": 8000,
                     }
 
@@ -684,10 +483,12 @@ class GLMProvider(LLMProvider):
                         ).isoformat()
                         script_dict["llm_provider"] = "glm"
                         script_dict["llm_model"] = self.model
+                        script_dict["variacao_id"] = variacoes.get("abertura", {}).get(
+                            "id", "unknown"
+                        )
 
-                        cache_manager.set(text_hash, config_hash, script_dict)
                         logger.info(
-                            f"Roteiro gerado com GLM: {len(script_dict.get('segments', []))} segmentos"
+                            f"Roteiro gerado com GLM (V7): {len(script_dict.get('segments', []))} segmentos - abertura: {variacoes.get('abertura', {}).get('id', 'unknown')}"
                         )
                         return script_dict
 
@@ -698,10 +499,9 @@ class GLMProvider(LLMProvider):
         raise Exception("Falha ao gerar com GLM")
 
 
-def get_provider(mode: str = "groq") -> LLMProvider:
+def get_provider(mode: str = "gemini-2.5-flash") -> LLMProvider:
     mode = mode.lower()
     providers = {
-        "groq": GroqProvider,
         "gemini": lambda: GeminiProvider("gemini-2.5-flash"),
         "gemini-2.0-flash": lambda: GeminiProvider("gemini-2.0-flash"),
         "gemini-2.0-flash-lite": lambda: GeminiProvider("gemini-2.0-flash-lite"),
@@ -709,7 +509,6 @@ def get_provider(mode: str = "groq") -> LLMProvider:
         "gemini-2.5-flash-lite": lambda: GeminiProvider("gemini-2.5-flash-lite"),
         "gemini-2.5-pro": lambda: GeminiProvider("gemini-2.5-pro"),
         "gemini-1.5-flash": lambda: GeminiProvider("gemini-1.5-flash"),
-        "ollama": OllamaProvider,
         "glm": lambda: GLMProvider("glm-4.7-flash"),
         "glm-4-flash": lambda: GLMProvider("glm-4-flash"),
         "glm-4.7-flash": lambda: GLMProvider("glm-4.7-flash"),

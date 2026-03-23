@@ -39,7 +39,12 @@ class Settings:
     OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
     GLM_API_KEY = os.getenv("GLM_API_KEY", "")
 
-    CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    CORS_ORIGINS = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
 
     AUDIO_SAMPLE_RATE = 44100
     AUDIO_BITRATE = "192k"
