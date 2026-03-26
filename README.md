@@ -2,7 +2,7 @@
 
 Sistema profissional para geração de podcasts educacionais usando Inteligência Artificial.
 
-**Versão:** 2.2.0 | **Última atualização:** 26/03/2026
+**Versão:** 2.2.0 | **Última atualização:** 27/03/2026
 
 ---
 
