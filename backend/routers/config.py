@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.models import UserConfig
@@ -23,6 +23,14 @@ class PersonagemSchema(BaseModel):
 class ApresentadorSchema(BaseModel):
     nome: str
     voz: Optional[str] = None
+    genero: Optional[str] = "M"  # "M" ou "F"
+
+    @field_validator("genero")
+    @classmethod
+    def validate_genero(cls, v):
+        if v is not None and v not in ("M", "F"):
+            raise ValueError("genero deve ser 'M' ou 'F'")
+        return v
 
 
 class ConfigUpdateSchema(BaseModel):
@@ -56,12 +64,14 @@ async def get_config(db: Session = Depends(get_db)):
         "apresentador": {
             "nome": config.apresentador_nome,
             "voz": config.apresentador_voz,
+            "genero": config.apresentador_genero or "M",
         }
         if config.apresentador_nome
         else None,
         "apresentadora": {
             "nome": config.apresentadora_nome,
             "voz": config.apresentadora_voz,
+            "genero": config.apresentadora_genero or "F",
         }
         if config.apresentadora_nome
         else None,
@@ -93,10 +103,12 @@ async def save_config(data: ConfigUpdateSchema, db: Session = Depends(get_db)):
     if data.apresentador is not None:
         config.apresentador_nome = data.apresentador.nome
         config.apresentador_voz = data.apresentador.voz
+        config.apresentador_genero = data.apresentador.genero or "M"
 
     if data.apresentadora is not None:
         config.apresentadora_nome = data.apresentadora.nome
         config.apresentadora_voz = data.apresentadora.voz
+        config.apresentadora_genero = data.apresentadora.genero or "F"
 
     if data.personagens is not None:
         config.personagens = json.dumps(
@@ -167,8 +179,10 @@ async def get_prompt_variables(db: Session = Depends(get_db)):
         "PESSOAS": ", ".join(pessoas) if pessoas else None,
         "HOST_NOME": config.apresentador_nome,
         "HOST_VOZ": config.apresentador_voz,
+        "HOST_GENERO": config.apresentador_genero or "M",
         "COHOST_NOME": config.apresentadora_nome,
         "COHOST_VOZ": config.apresentadora_voz,
+        "COHOST_GENERO": config.apresentadora_genero or "F",
         "PERSONAGENS_EXEMPLOS": "\n".join([f"- {p}" for p in personagens])
         if personagens
         else None,

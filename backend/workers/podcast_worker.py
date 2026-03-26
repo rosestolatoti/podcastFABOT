@@ -98,18 +98,22 @@ async def process_podcast_job(ctx: dict, job_id: str) -> dict:
 
     except Exception as e:
         logger.error(f"Job {job_id} falhou: {e}")
-        job = db.query(Job).filter(Job.id == job_id).first()
-        if job:
-            job.status = "FAILED"
-            job.error_message = str(e)
-            db.commit()
+        try:
+            db.rollback()
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job:
+                job.status = "FAILED"
+                job.error_message = str(e)
+                db.commit()
+        except Exception as db_err:
+            logger.error(f"Erro ao atualizar status failed: {db_err}")
         return {"success": False, "error": str(e)}
     finally:
         db.close()
 
 
 async def generate_script_only(ctx: dict, job_id: str) -> dict:
-    """Gera apenas o roteiro (LLM), sem gerar áudio"""
+    """Gera roteiros para TODOS os episódios (todas as seções do texto)."""
     db = SessionLocal()
 
     try:
@@ -128,48 +132,87 @@ async def generate_script_only(ctx: dict, job_id: str) -> dict:
         text = job.script_json or "Texto não fornecido"
 
         secoes = dividir_texto(text)
+        total_episodes = len(secoes)
         logger.info(f"\n{relatorio_divisao(secoes)}")
 
         job.status = "LLM_PROCESSING"
         job.progress = 10
-        job.current_step = f"Gerando roteiro (episódio 1 de {len(secoes)})..."
+        job.current_step = f"Gerando roteiro (episódio 1 de {total_episodes})..."
         db.commit()
 
         provider = get_provider(str(job.llm_mode))
 
-        config = {
-            "target_duration": job.target_duration or 10,
-            "depth_level": job.depth_level,
-            "podcast_type": job.podcast_type,
-            "voice_host": job.voice_host,
-            "voice_cohost": job.voice_cohost,
-            "section_title": secoes[0].titulo,
-            "episode_number": 1,
-            "total_episodes": len(secoes),
-        }
+        all_scripts = []
+        previous_summary = ""
 
-        script = await provider.generate_script(secoes[0].conteudo, config)
+        for i, secao in enumerate(secoes):
+            episode_num = i + 1
 
-        job.script_json = json.dumps(script, ensure_ascii=False)
+            job.current_step = f"Gerando roteiro (episódio {episode_num} de {total_episodes})..."
+            job.progress = 10 + int((episode_num / total_episodes) * 30)
+            db.commit()
+
+            config = {
+                "target_duration": job.target_duration or 10,
+                "depth_level": job.depth_level,
+                "podcast_type": job.podcast_type,
+                "voice_host": job.voice_host,
+                "voice_cohost": job.voice_cohost,
+                "section_title": secao.titulo,
+                "episode_number": episode_num,
+                "total_episodes": total_episodes,
+                "previous_summary": previous_summary,
+            }
+
+            script = await provider.generate_script(secao.conteudo, config)
+
+            # Extrair resumo para contexto do próximo episódio
+            if isinstance(script, dict):
+                segments = script.get("segments", [])
+                # Pegar os últimos 3 segmentos como resumo
+                last_texts = [s.get("text", "") for s in segments[-3:] if s.get("text")]
+                previous_summary = " ".join(last_texts)[:500]
+
+                script["episode_number"] = episode_num
+                script["total_episodes"] = total_episodes
+                script["section_title"] = secao.titulo
+
+            all_scripts.append(script)
+            logger.info(f"Episódio {episode_num}/{total_episodes} gerado: {secao.titulo}")
+
+        # Salvar TODOS os scripts — se for 1 episódio, salvar o dict direto
+        # Se for múltiplos, salvar como lista
+        if len(all_scripts) == 1:
+            job.script_json = json.dumps(all_scripts[0], ensure_ascii=False)
+        else:
+            job.script_json = json.dumps(all_scripts, ensure_ascii=False)
+
         job.status = "SCRIPT_DONE"
         job.progress = 40
-        job.current_step = "Roteiro pronto para revisão"
+        job.current_step = f"Roteiro pronto ({total_episodes} episódios)"
         db.commit()
 
         return {
             "success": True,
             "job_id": job_id,
-            "script": str(script),
-            "total_episodes": len(secoes),
+            "total_episodes": total_episodes,
+            "episodes": [
+                {"episode": i + 1, "title": s.titulo}
+                for i, s in enumerate(secoes)
+            ],
         }
 
     except Exception as e:
         logger.error(f"Job {job_id} falhou ao gerar roteiro: {e}")
-        job = db.query(Job).filter(Job.id == job_id).first()
-        if job:
-            job.status = "FAILED"
-            job.error_message = str(e)
-            db.commit()
+        try:
+            db.rollback()
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job:
+                job.status = "FAILED"
+                job.error_message = str(e)
+                db.commit()
+        except Exception as db_err:
+            logger.error(f"Erro ao atualizar status failed: {db_err}")
         return {"success": False, "job_id": job_id, "error": str(e)}
     finally:
         db.close()
@@ -224,12 +267,15 @@ async def start_tts_job(ctx: dict, job_id: str) -> dict:
 
     except Exception as e:
         logger.error(f"Job TTS {job_id} falhou: {e}")
-
-        job = db.query(Job).filter(Job.id == job_id).first()
-        if job:
-            job.status = "FAILED"
-            job.error_message = str(e)
-            db.commit()
+        try:
+            db.rollback()
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job:
+                job.status = "FAILED"
+                job.error_message = str(e)
+                db.commit()
+        except Exception as db_err:
+            logger.error(f"Erro ao atualizar status failed: {db_err}")
 
         return {"success": False, "error": str(e)}
 
@@ -237,4 +283,4 @@ async def start_tts_job(ctx: dict, job_id: str) -> dict:
         db.close()
 
 
-WorkerSettings.functions = [process_podcast_job, start_tts_job]
+WorkerSettings.functions = [process_podcast_job, generate_script_only, start_tts_job]

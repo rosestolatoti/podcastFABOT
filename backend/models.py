@@ -90,9 +90,11 @@ class UserConfig(Base):
 
     apresentador_nome = Column(String(100), nullable=True)
     apresentador_voz = Column(String(50), nullable=True)
+    apresentador_genero = Column(String(1), default="M")
 
     apresentadora_nome = Column(String(100), nullable=True)
     apresentadora_voz = Column(String(50), nullable=True)
+    apresentadora_genero = Column(String(1), default="F")
 
     personagens = Column(Text, nullable=True)
     empresas = Column(Text, nullable=True)
