@@ -381,6 +381,6 @@ async def build_episode(
     if final_path.exists() and final_path.stat().st_size > 0:
         removed = cleanup_segments(output_dir)
         if removed > 0:
-        logger.info("Cleanup: %d arquivos temp removidos", removed)
+            logger.info("Cleanup: %d arquivos temp removidos", removed)
 
     return final_path
