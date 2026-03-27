@@ -2,7 +2,7 @@
 
 Sistema profissional para geração de podcasts educacionais usando Inteligência Artificial.
 
-**Versão:** 2.2.0 | **Última atualização:** 27/03/2026
+**Versão:** 2.3.0 | **Última atualização:** 27/03/2026
 
 ---
 
@@ -10,23 +10,25 @@ Sistema profissional para geração de podcasts educacionais usando Inteligênci
 
 1. [O que é o FABOT](#o-que-é-o-fabot)
 2. [Tecnologias](#tecnologias)
-3. [Transcrição de Vídeos do YouTube](#-transcrição-de-vídeos-do-youtube)
-4. [Personagens e Vozes](#personagens-e-vozes)
-5. [Motor de Variedade Criativa V7](#motor-de-variedade-criativa-v7)
-6. [Como Funciona](#como-funciona)
-7. [Interface](#interface)
-8. [Funcionalidades](#funcionalidades)
-9. [Estrutura do Projeto](#estrutura-do-projeto)
-10. [Descrição dos Arquivos](#descrição-dos-arquivos)
-11. [API Endpoints](#api-endpoints)
-12. [Banco de Dados](#banco-de-dados)
-13. [Configuração](#configuração)
-14. [Como Executar](#como-executar)
-15. [LLMs Suportados](#llms-suportados)
-16. [Erros Comuns](#erros-comuns)
-17. [Sistema de Inicialização](#sistema-de-inicialização)
-18. [Correções Implementadas](#correções-implementadas)
-19. [Histórico de Atualizações](#histórico-de-atualizações)
+3. [Sistema de Marca-Texto](#sistema-de-marca-texto)
+4. [Player Estilo Spotify](#player-estilo-spotify)
+5. [Transcrição de Vídeos do YouTube](#-transcrição-de-vídeos-do-youtube)
+6. [Personagens e Vozes](#personagens-e-vozes)
+7. [Motor de Variedade Criativa V7](#motor-de-variedade-criativa-v7)
+8. [Como Funciona](#como-funciona)
+9. [Interface](#interface)
+10. [Funcionalidades](#funcionalidades)
+11. [Estrutura do Projeto](#estrutura-do-projeto)
+12. [Descrição dos Arquivos](#descrição-dos-arquivos)
+13. [API Endpoints](#api-endpoints)
+14. [Banco de Dados](#banco-de-dados)
+15. [Configuração](#configuração)
+16. [Como Executar](#como-executar)
+17. [LLMs Suportados](#llms-suportados)
+18. [Erros Comuns](#erros-comuns)
+19. [Sistema de Inicialização](#sistema-de-inicialização)
+20. [Correções Implementadas](#correções-implementadas)
+21. [Histórico de Atualizações](#histórico-de-atualizações)
 
 ---
 
@@ -54,6 +56,220 @@ O FABOT é um sistema que transforma textos e documentos em podcasts educacionai
 | **LLM** | Gemini, GLM, NVIDIA (GLM-5, Kimi, MiniMax) | Geração de roteiros inteligentes |
 | **OCR** | pdfminer + pytesseract | Extração de texto de PDFs e imagens |
 | **YouTube** | youtube-transcript-api | Transcrição de vídeos do YouTube |
+
+---
+
+## 📌 Sistema de Marca-Texto
+
+Sistema de seleção de tópicos que permite ao usuário definir os episódios do podcast selecionando palavras ou frases diretamente no texto.
+
+### Como Funciona
+
+```
+1. Usuário cola texto na aba "Texto"
+         ↓
+2. Seleciona palavras/frases com o mouse
+         ↓
+3. Botão 📌 aparece ao lado da seleção
+         ↓
+4. Clica no 📌 para marcar o tópico
+         ↓
+5. Tópicos aparecem em chips ordenáveis (drag-and-drop)
+         ↓
+6. Clica em "Gerar N Episódio(s) Sequencial(is)"
+         ↓
+7. Cada tópico = 1 episódio sequencial na ordem definida
+```
+
+### Interface
+
+**Arquivo:** `frontend/src/components/InputPanel.jsx`
+
+**Estados do Sistema:**
+- `topics[]` - Array de tópicos marcados
+- `showPin` - Controla visibilidade do botão 📌
+- `pinPosition` - Posição do botão na tela
+- `selectedText` - Texto atualmente selecionado
+- `dragIndex/dragOverIndex` - Controle de drag-and-drop
+
+### Recursos
+
+| Recurso | Descrição |
+|---------|-----------|
+| **Seleção de texto** | Selecione qualquer palavra/frase no textarea |
+| **Botão 📌** | Aparece flutuando ao lado da seleção |
+| **Limite** | Máximo 10 tópicos por podcast |
+| **Drag-and-drop** | Arraste os chips para reordenar episódios |
+| **Remoção** | Clique em × para remover tópico |
+| **Dica visual** | 🖍️ aparece quando texto > 100 caracteres |
+
+### Código Principal
+
+```javascript
+const handleTextMouseUp = (e) => {
+  const selection = window.getSelection();
+  const selected = selection?.toString().trim();
+  
+  if (selected && selected.length >= 2 && selected.length <= 100) {
+    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    setPinPosition({
+      x: rect.right + window.scrollX + 8,
+      y: rect.top + window.scrollY - 4,
+    });
+    setShowPin(true);
+  }
+};
+```
+
+### CSS - Posicionamento do Pin
+
+```css
+.pin-button {
+  position: fixed;
+  z-index: 1000;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  /* ... */
+}
+```
+
+### Backend - Salvamento de Topics
+
+O `content_plan` armazena os tópicos selecionados:
+
+```python
+# backend/routers/upload.py
+if topics:
+    validated_topics = json.loads(topics) if isinstance(topics, str) else topics
+    job.content_plan = json.dumps(validated_topics)
+```
+
+### Worker - Geração por Tópico
+
+```python
+# backend/workers/podcast_worker.py
+if job.content_plan:
+    parsed_topics = json.loads(job.content_plan)
+    if isinstance(parsed_topics, list):
+        user_topics = parsed_topics
+        # Gera 1 episódio por tópico
+        for i, topic in enumerate(user_topics):
+            episode_input = (
+                f"TÓPICO DESTE EPISÓDIO: {topic}\n\n"
+                f"TEXTO DE REFERÊNCIA:\n{text}"
+            )
+            # ... gera episódio
+```
+
+### Organização dos Arquivos
+
+```
+frontend/src/components/
+├── InputPanel.jsx    # Sistema de marca-texto
+├── InputPanel.css    # Estilos do pin e chips
+```
+
+---
+
+## 🎵 Player Estilo Spotify
+
+Player de áudio moderno com visual dark mode e controles avançados.
+
+### Interface
+
+**Arquivo:** `frontend/src/components/PlayerPanel.jsx`
+
+### Recursos
+
+| Recurso | Descrição |
+|---------|-----------|
+| **Design Dark** | Fundo gradiente #1a1a2e → #16213e |
+| **Controles Visuais** | Play/Pause, Skip ±10s |
+| **Barra de Progresso** | Input range customizado com gradiente |
+| **Velocidade** | 0.75x, 1x, 1.25x, 1.5x, 2x |
+| **Volume** | Slider horizontal |
+| **Lista de Episódios** | Mostra episódios da série |
+| **Download Individual** | Baixa cada episódio separadamente |
+| **Download Completo** | Baixa todos concatenados |
+
+### Estrutura Visual
+
+```
+┌─────────────────────────────┐
+│  🎙️ Player Estilo Spotify   │
+│                             │
+│    ┌─────────────┐        │
+│    │    🎙️      │ Artwork │
+│    └─────────────┘        │
+│                             │
+│  Título do Podcast          │
+│  2 episódios               │
+│                             │
+│  ═══════●═══════════      │
+│  0:45        8:32          │
+│                             │
+│    ⏪    ▶    ⏩          │
+│                             │
+│  [0.75x] [1x] [1.25x]...  │
+│  🔊 ══════●═══             │
+│                             │
+│  Episódios desta série     │
+│  EP 1 • Título • 4:15  ⬇ │
+│  EP 2 • Título • 3:58  ⬇ │
+│                             │
+│  ⬇ Baixar MP3 Completo    │
+└─────────────────────────────┘
+```
+
+### Código - Player Controls
+
+```javascript
+const togglePlay = () => {
+  if (isPlaying) {
+    audioRef.current.pause();
+  } else {
+    audioRef.current.play().catch(err => console.error('Play error:', err));
+  }
+};
+
+const skipBack = () => {
+  audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime - 10);
+};
+
+const skipForward = () => {
+  audioRef.current.currentTime = Math.min(duration, audioRef.current.currentTime + 10);
+};
+```
+
+### Download Individual por Episódio
+
+```javascript
+const getEpisodeDownloadUrl = (epNum) => {
+  return `http://localhost:8000/download/${currentJob.id}/episode/${epNum}`;
+};
+```
+
+### CSS - Player Dark Mode
+
+```css
+.spotify-player {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.play-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+}
+```
 
 ---
 
@@ -379,22 +595,28 @@ A interface tem 3 colunas:
 
 ### Coluna 2 - Roteiro
 
-- Lista de falas em ordem cronológica
-- Cada fala em uma caixa separada
-- Cores por personagem (Vermelho/Azul/Rosa)
-- Editor de texto para editar cada fala
-- Botão "Salvar" para persistir alterações
-- Botão "Gerar Áudio" para criar o podcast
-- 3 cards de apresentadores quando não há roteiro
+- **Dashboard com 4 cards grandes** (Episódios, Falas, Min. Total, Duração Real)
+- **Cards expandíveis** para ver falas de cada episódio
+- **Cores por speaker:**
+  - 🔴 **NARRADORA** - Vermelho (#dc2626)
+  - 🔵 **WILLIAM** - Azul (#2563eb)
+  - 🩷 **CRISTINA** - Rosa (#ec4899)
+- Barra lateral colorida em cada fala
+- Botões no header: Exportar, Salvar, Gerar Áudio
+- Scroll interno nos episodes expandidos
 
 ### Coluna 3 - Player
 
-- Player de áudio para ouvir o podcast
-- Botão para baixar MP3
+- **Player estilo Spotify** com visual dark mode
+- **Controles visuais**: Play/Pause, Skip ±10s
+- **Barra de progresso** customizada com gradiente
+- **Velocidade**: 0.75x, 1x, 1.25x, 1.5x, 2x
+- **Lista de episódios** da série com numeração
+- **Download individual** por episódio
+- **Download completo** de todos os episódios
 - Histórico de podcasts gerados
 - Busca por título
 - Filtro de favoritos
-- Categorias e playlists
 - Alternância de tema claro/escuro
 
 ---
@@ -612,6 +834,8 @@ fabot-studio/
 | Método | Endpoint | Descrição |
 |--------|----------|-----------|
 | GET | `/audio/{filepath}` | Servir arquivo de áudio |
+| GET | `/download/{job_id}` | Baixar MP3 completo |
+| GET | `/download/{job_id}/episode/{ep_num}` | Baixar episódio individual |
 
 ### Health
 
@@ -632,10 +856,12 @@ jobs (
   status          VARCHAR(20),        -- PENDING, READING, LLM_PROCESSING, SCRIPT_DONE, TTS_QUEUED, TTS_PROCESSING, DONE, FAILED, CANCELLED
   progress        INTEGER,
   current_step    VARCHAR(255),
-  script_json     TEXT,               -- Roteiro completo em JSON
+  script_json     TEXT,               -- Roteiro completo em JSON (array se multi-episódio)
   script_edited   BOOLEAN,
-  audio_path      VARCHAR(500),       -- Caminho do arquivo MP3
+  content_plan    TEXT,               -- Tópicos selecionados (marca-texto) ou plano automático
+  audio_path      VARCHAR(500),       -- Caminho do arquivo MP3 final
   duration_seconds INTEGER,
+  episodes_meta  TEXT,               -- JSON array com metadados de cada episódio
   category        VARCHAR(100),
   tags            VARCHAR(500),
   is_favorite     BOOLEAN,
@@ -661,6 +887,51 @@ files (
   char_count      INTEGER,
   status          VARCHAR(20)
 )
+```
+
+### episodes_meta - Estrutura JSON
+
+```json
+[
+  {
+    "episode_number": 1,
+    "audio_path": "/path/to/job_id/ep_01/final.mp3",
+    "audio_url": "job_id/ep_01/final.mp3",
+    "duration_seconds": 285.5,
+    "title": "Pydantic: O Porteiro que Não Deixa Dado Errado Entrar"
+  },
+  {
+    "episode_number": 2,
+    "audio_path": "/path/to/job_id/ep_02/final.mp3",
+    "audio_url": "job_id/ep_02/final.mp3",
+    "duration_seconds": 245.3,
+    "title": "Alembic: O Historiador do Banco de Dados"
+  }
+]
+```
+
+### content_plan - Estrutura JSON
+
+**Modo Marca-Texto (manual):**
+```json
+["machine learning", "redes neurais", "otimizacao"]
+```
+
+**Modo Automático:**
+```json
+{
+  "total_episodes": 3,
+  "estimated_total_minutes": 45,
+  "episodes": [
+    {
+      "episode_number": 1,
+      "title": "Introdução ao Python",
+      "main_concept": "conceito principal",
+      "key_topics": ["tópico1", "tópico2"],
+      "estimated_minutes": 15
+    }
+  ]
+}
 ```
 
 ---
@@ -912,6 +1183,204 @@ Todas as correções foram documentadas em [CORRECOES.md](./CORRECOES.md).
 ---
 
 ## 📜 Histórico de Atualizações
+
+### 27/03/2026 - Sistema Marca-Texto + Player Spotify + Multi-Episódio
+
+**Duração Total:** ~6 horas de desenvolvimento e correções
+
+---
+
+### 🎯 FUNCIONALIDADES IMPLEMENTADAS
+
+#### 1. Sistema de Marca-Texto (Highlight)
+
+**Problema:** Usuário queria definir tópicos manualmente para cada episódio.
+
+**Solução:** Sistema de seleção de texto com:
+- Seleção de palavras/frases no textarea
+- Botão 📌 flutuante aparece ao lado da seleção
+- Chips ordenáveis com drag-and-drop
+- Máximo 10 tópicos
+- Cada tópico = 1 episódio sequencial
+
+**Arquivos:**
+- `frontend/src/components/InputPanel.jsx` - Lógica completa
+- `frontend/src/components/InputPanel.css` - Estilos do pin e chips
+
+**Código Principal:**
+```javascript
+const handleTextMouseUp = (e) => {
+  const selection = window.getSelection();
+  const selected = selection?.toString().trim();
+  
+  if (selected && selected.length >= 2 && selected.length <= 100) {
+    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    setPinPosition({
+      x: rect.right + window.scrollX + 8,
+      y: rect.top + window.scrollY - 4,
+    });
+    setShowPin(true);
+  }
+};
+```
+
+---
+
+#### 2. Dashboard de Episódios com Cards Expandíveis
+
+**Problema:** Dashboard pequeno/ilegível, cards não mostravam falas.
+
+**Solução:**
+- Dashboard com 4 cards GRANDES (28px fonte)
+- Cards expandíveis para ver todas as falas
+- Scroll interno nos episodes expandidos
+- Número de falas e minutos estimados por episódio
+
+**Arquivos:**
+- `frontend/src/components/ScriptPanel.jsx`
+- `frontend/src/components/ScriptPanel.css`
+
+**Dashboard Cards:**
+```css
+.dashboard-card .card-value {
+  font-size: 28px;
+  font-weight: 700;
+}
+```
+
+---
+
+#### 3. Cores Diferentes para Speakers
+
+**Problema:** NARRADORA, WILLIAM, CRISTINA tinham mesma fonte/cor.
+
+**Solução:** Cores distintas com barra lateral:
+- 🔴 **NARRADORA**: #dc2626 (vermelho)
+- 🔵 **WILLIAM**: #2563eb (azul)
+- 🩷 **CRISTINA**: #ec4899 (rosa)
+
+**CSS:**
+```css
+.segment-row.speaker-narrador {
+  border-left-color: #dc2626;
+}
+.segment-row.speaker-narrador .segment-speaker {
+  color: #dc2626;
+}
+```
+
+---
+
+#### 4. Player Estilo Spotify
+
+**Problema:** Player feio com `<audio controls>` padrão, sem episódios separados.
+
+**Solução:**
+- Design dark mode (#1a1a2e → #16213e)
+- Controles visuais customizados
+- Barra de progresso com gradiente
+- Velocidade: 0.75x, 1x, 1.25x, 1.5x, 2x
+- Volume com slider
+- Lista de episódios da série
+- Download individual por episódio
+- Download completo concatenado
+
+**Arquivos:**
+- `frontend/src/components/PlayerPanel.jsx`
+- `frontend/src/components/PlayerPanel.css`
+
+---
+
+#### 5. Multi-Episódio Backend
+
+**Melhorias no worker:**
+- `audio_url` adicionado no `episodes_meta`
+- Endpoint para download de episódio individual
+- Nome do arquivo dinâmico com episódio
+
+**Arquivos:**
+- `backend/workers/podcast_worker.py`
+- `backend/main.py`
+
+---
+
+### 🛠️ ARQUIVOS MODIFICADOS
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `backend/main.py` | Endpoint `/download/{job_id}/episode/{ep_num}` |
+| `backend/workers/podcast_worker.py` | `audio_url` no episodes_meta |
+| `frontend/src/components/InputPanel.jsx` | Sistema marca-texto completo |
+| `frontend/src/components/InputPanel.css` | Estilos pin e chips |
+| `frontend/src/components/PlayerPanel.jsx` | Player Spotify + episódios |
+| `frontend/src/components/PlayerPanel.css` | Visual dark mode |
+| `frontend/src/components/ScriptPanel.jsx` | Dashboard + cards expandíveis |
+| `frontend/src/components/ScriptPanel.css` | Estilos dashboard + cores speakers |
+| `README.md` | Documentação completa atualizada |
+
+---
+
+### 📊 RESULTADOS OBTIDOS
+
+```
+Job ID: 072586d0-0dcf-4576-8c14-013a57d51da5
+Título: Pydantic — o porteiro que não deixa dado errado entrar
+
+Episódios:
+├── ep_01/final.mp3 (15:15) - Pydantic
+├── ep_02/final.mp3 (13:16) - Alembic
+└── final.mp3 (25MB) - Concatenado
+
+Roteiro: 2 episódios, 119 falas
+```
+
+---
+
+### ✅ CHECKLIST DE VERIFICAÇÃO
+
+```bash
+# 1. Sistema de marca-texto
+- Selecione texto → botão 📌 aparece ✅
+- Clique em 📌 → tópico adicionado ✅
+- Drag-and-drop → reordena episódios ✅
+
+# 2. Dashboard de episódios
+- Cards com números grandes ✅
+- Expandir card → mostra falas ✅
+- Scroll interno funciona ✅
+
+# 3. Cores dos speakers
+- NARRADORA → vermelho ✅
+- WILLIAM → azul ✅
+- CRISTINA → rosa ✅
+
+# 4. Player Spotify
+- Play/Pause funciona ✅
+- Skip ±10s funciona ✅
+- Velocidade funciona ✅
+- Download individual ✅
+- Download completo ✅
+```
+
+---
+
+### 🎯 PRÓXIMAS MELHORIAS
+
+- [ ] Gerar thumbnail/album art para MP3
+- [ ] Waveform visualization no player
+- [ ] ProgressOverlay toast mais elaborado
+- [ ] Histórico com mais metadados
+
+---
+
+### 📝 LIÇÕES APRENDIDAS
+
+1. **Pin position**: `position: fixed` com `window.scrollX/Y` para posicionar corretamente
+2. **CSS organization**: Seções com comentários para manter código legível
+3. **Player customizado**: Preferir controles customizados em vez de `<audio controls>`
+4. **Multi-episódio**: `Array.isArray(parsed)` para detectar roteiros únicos vs múltiplos
+
+---
 
 ### 24/03/2026 - Integração NVIDIA APIs (GLM-5, Kimi, MiniMax) + Correções Críticas
 
