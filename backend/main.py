@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
@@ -67,12 +67,10 @@ async def serve_audio(filepath: str):
 
     # Proteção contra path traversal: garante que o arquivo está dentro de output/
     if not str(audio_path).startswith(str(output_dir)):
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=403, detail="Acesso negado")
 
     if not audio_path.exists():
-        return {"error": "Arquivo não encontrado"}
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
     return FileResponse(audio_path, media_type="audio/mpeg", filename=audio_path.name)
 
 
@@ -83,24 +81,26 @@ async def download_audio(job_id: str):
     import re
 
     db = SessionLocal()
-    job = db.query(Job).filter(Job.id == job_id).first()
-    db.close()
+    try:
+        job = db.query(Job).filter(Job.id == job_id).first()
 
-    if not job:
-        return {"error": "Job não encontrado"}
+        if not job:
+            raise HTTPException(status_code=404, detail="Job não encontrado")
 
-    if not job.audio_path:
-        return {"error": "Áudio não gerado ainda"}
+        if not job.audio_path:
+            raise HTTPException(status_code=400, detail="Áudio não gerado ainda")
 
-    audio_path = Path(job.audio_path)
-    if not audio_path.exists():
-        return {"error": "Arquivo não encontrado", "path": str(audio_path)}
+        audio_path = Path(job.audio_path)
+        if not audio_path.exists():
+            raise HTTPException(status_code=404, detail="Arquivo de áudio não encontrado")
 
-    # Criar nome do arquivo baseado no título do podcast
-    # Remove caracteres inválidos para nome de arquivo
-    safe_title = re.sub(r"[^\w\s\-]", "", job.title)
-    safe_title = re.sub(r"[\s]+", "_", safe_title)
-    safe_title = safe_title[:50]  # Limita tamanho
-    download_filename = f"{safe_title}.mp3"
+        # Criar nome do arquivo baseado no título do podcast
+        # Remove caracteres inválidos para nome de arquivo
+        safe_title = re.sub(r"[^\w\s\-]", "", job.title)
+        safe_title = re.sub(r"[\s]+", "_", safe_title)
+        safe_title = safe_title[:50]  # Limita tamanho
+        download_filename = f"{safe_title}.mp3"
 
-    return FileResponse(audio_path, media_type="audio/mpeg", filename=download_filename)
+        return FileResponse(audio_path, media_type="audio/mpeg", filename=download_filename)
+    finally:
+        db.close()

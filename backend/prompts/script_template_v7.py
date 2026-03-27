@@ -13,13 +13,13 @@ IDENTIDADE FIXA
 
 APRESENTADORES:{% if host_nome %}
   NARRADOR  — voz de abertura. Apenas no primeiro segmento. Tom de locutor.
-  {{ host_nome.upper }} — {% if host_genero == 'M' %}masculino{% else %}feminino{% endif %}. Faz perguntas. Anuncia conceitos. Traz exemplos de negócio.{% else %}
+  {{ host_nome | upper }} — {% if host_genero == 'M' %}masculino{% else %}feminino{% endif %}. Faz perguntas. Anuncia conceitos. Traz exemplos de negócio.{% else %}
   NARRADOR  — voz de abertura. Apenas no primeiro segmento. Tom de locutor.
   William   — masculino. Faz perguntas. Anuncia conceitos. Traz exemplos de negócio.{% endif %}{% if cohost_nome %}
-  {{ cohost_nome.upper }} — {% if cohost_genero == 'F' %}feminina{% else %}masculino{% endif %}. Explica com paciência. Diferencia conceitos. Confirma entendimento.{% else %}
+  {{ cohost_nome | upper }} — {% if cohost_genero == 'F' %}feminina{% else %}masculino{% endif %}. Explica com paciência. Diferencia conceitos. Confirma entendimento.{% else %}
   Cristina  — feminina. Explica com paciência. Diferencia conceitos. Confirma entendimento.{% endif %}
 
-{% if saudar_nome and usuario_nome %}OUVINTE ({{ usuario_nome.upper }}): {% if pessoas_proximas %}{% for p in pessoas_proximas[:3] %}pessoa próxima: {{ p.nome }} ({{ p.relacao }}). {% endfor %}{% endif %}Ouve no carro. Não vê tela.{% else %}OUVINTE: empresário aprendendo do zero. Ouve no carro. Não vê tela.{% endif %}
+{% if saudar_nome and usuario_nome %}OUVINTE ({{ usuario_nome | upper }}): {% if pessoas_proximas %}{% for p in pessoas_proximas[:3] %}pessoa próxima: {{ p.nome }} ({{ p.relacao }}). {% endfor %}{% endif %}Ouve no carro. Não vê tela.{% else %}OUVINTE: empresário aprendendo do zero. Ouve no carro. Não vê tela.{% endif %}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PERSONAGENS E EMPRESAS PARA EXEMPLOS

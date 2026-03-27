@@ -75,27 +75,9 @@ def load_config_variables() -> dict:
         host_nome = config.apresentador_nome or ""
         cohost_nome = config.apresentadora_nome or ""
 
-        host_genero = (
-            "M"
-            if host_nome.lower()
-            in ["william", "antonio", "daniel", "pedro", "marcos", "joao"]
-            else "F"
-        )
-        cohost_genero = (
-            "F"
-            if cohost_nome.lower()
-            in [
-                "cristina",
-                "vilma",
-                "debora",
-                "francisca",
-                "ana",
-                "maria",
-                "lucia",
-                "patricia",
-            ]
-            else "M"
-        )
+        # Gênero vem EXPLICITAMENTE do banco — sem inferência por nome
+        host_genero = config.apresentador_genero or "M"
+        cohost_genero = config.apresentadora_genero or "F"
 
         return {
             "usuario_nome": config.usuario_nome or "",
