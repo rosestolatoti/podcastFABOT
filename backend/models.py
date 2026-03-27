@@ -62,6 +62,8 @@ class Job(Base):
     current_episode = Column(Integer, default=0)
     plano_json = Column(Text, nullable=True)
     bible_json = Column(Text, nullable=True)
+    content_plan = Column(Text, nullable=True)
+    episodes_meta = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(

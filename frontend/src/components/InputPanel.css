@@ -445,6 +445,7 @@
   height: 100%;
   display: flex;
   flex-direction: column;
+  position: relative; /* Container para o pin absolute */
 }
 
 .text-input {
@@ -799,7 +800,7 @@
 
 .pin-button {
   position: fixed;
-  z-index: 100;
+  z-index: 1000;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border: none;
@@ -808,7 +809,7 @@
   height: 36px;
   font-size: 18px;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.6);
   animation: pin-pop 0.2s ease-out;
   display: flex;
   align-items: center;

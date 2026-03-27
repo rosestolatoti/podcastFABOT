@@ -4,6 +4,8 @@ from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 import logging
 import logging.handlers
+import json
+import re
 from pathlib import Path
 from backend.config import settings
 from backend.database import init_db
@@ -54,6 +56,14 @@ app.include_router(ocr.router, prefix="/ocr", tags=["ocr"])
 app.include_router(config.router, tags=["config"])
 app.include_router(youtube.router, prefix="/youtube", tags=["youtube"])
 
+# Servir frontend estático em produção
+from fastapi.staticfiles import StaticFiles
+
+base_dir = Path(__file__).resolve().parent.parent
+dist_dir = base_dir / "frontend" / "dist"
+if dist_dir.exists():
+    app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="static")
+
 
 @app.get("/")
 async def root():
@@ -79,7 +89,6 @@ async def serve_audio(filepath: str):
 async def download_audio(job_id: str):
     from backend.database import SessionLocal
     from backend.models import Job
-    import re
 
     db = SessionLocal()
     try:
@@ -93,15 +102,55 @@ async def download_audio(job_id: str):
 
         audio_path = Path(job.audio_path)
         if not audio_path.exists():
-            raise HTTPException(status_code=404, detail="Arquivo de áudio não encontrado")
+            raise HTTPException(
+                status_code=404, detail="Arquivo de áudio não encontrado"
+            )
 
-        # Criar nome do arquivo baseado no título do podcast
-        # Remove caracteres inválidos para nome de arquivo
-        safe_title = re.sub(r"[^\w\s\-]", "", job.title)
-        safe_title = re.sub(r"[\s]+", "_", safe_title)
-        safe_title = safe_title[:50]  # Limita tamanho
-        download_filename = f"{safe_title}.mp3"
+        safe_title = re.sub(r"[^\w\s\-]", "", job.title or "podcast")
+        safe_title = re.sub(r"[\s]+", "_", safe_title)[:50]
 
-        return FileResponse(audio_path, media_type="audio/mpeg", filename=download_filename)
+        episodes_meta = []
+        if job.episodes_meta:
+            try:
+                episodes_meta = json.loads(job.episodes_meta)
+            except:
+                pass
+
+        if len(episodes_meta) > 1:
+            download_filename = f"{safe_title}_completo_{len(episodes_meta)}eps.mp3"
+        else:
+            download_filename = f"{safe_title}.mp3"
+
+        return FileResponse(
+            audio_path, media_type="audio/mpeg", filename=download_filename
+        )
+    finally:
+        db.close()
+
+
+@app.get("/download/{job_id}/episode/{episode_num}")
+async def download_episode(job_id: str, episode_num: int):
+    from backend.database import SessionLocal
+    from backend.models import Job
+
+    db = SessionLocal()
+    try:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job não encontrado")
+
+        output_dir = Path(settings.OUTPUT_DIR) / job_id
+        ep_dir = output_dir / f"ep_{episode_num:02d}"
+        ep_audio = ep_dir / "final.mp3"
+
+        if not ep_audio.exists():
+            raise HTTPException(status_code=404, detail="Episódio não encontrado")
+
+        safe_title = re.sub(r"[^\w\s\-]", "", job.title or "podcast")
+        safe_title = re.sub(r"[\s]+", "_", safe_title)[:40]
+
+        filename = f"{safe_title}_ep{episode_num:02d}.mp3"
+
+        return FileResponse(ep_audio, media_type="audio/mpeg", filename=filename)
     finally:
         db.close()

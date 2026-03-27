@@ -651,6 +651,7 @@ async def start_tts_job(ctx: dict, job_id: str) -> dict:
                 {
                     "episode_number": i + 1,
                     "audio_path": path,
+                    "audio_url": f"{job_id}/ep_{i + 1:02d}/final.mp3",
                     "duration_seconds": len(ep_audio) / 1000,
                     "title": scripts_list[i].get(
                         "section_title",

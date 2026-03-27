@@ -229,6 +229,8 @@ async def get_job(job_id: str, db: Session = Depends(get_db)):
         "llm_mode": job.llm_mode,
         "voice_host": job.voice_host,
         "created_at": job.created_at.isoformat() if job.created_at else None,
+        "content_plan": job.content_plan,
+        "episodes_meta": job.episodes_meta,
     }
 
 
@@ -475,11 +477,7 @@ class MultiJobCreate(BaseModel):
 
 
 def run_multi_episode_pipeline(job_id: str, texto: str):
-    """Executa o pipeline de múltiplos episódios em background"""
-    import asyncio
-    from backend.services.content_planner import executar_pipeline
-    import tempfile
-    import os
+    logger.warning("[MultiEpisode] Desabilitado - usar generate_script_only()")
 
     db = SessionLocal()
     try:

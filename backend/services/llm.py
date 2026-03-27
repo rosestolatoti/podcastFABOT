@@ -270,6 +270,13 @@ class LLMProvider:
     async def health_check(self) -> bool:
         raise NotImplementedError
 
+    async def raw_completion(self, system_prompt: str, user_prompt: str) -> str:
+        """Faz uma chamada simples ao LLM sem template de podcast.
+        Usado pelo content_planner para análise de texto.
+        Retorna a resposta como string pura.
+        """
+        raise NotImplementedError
+
 
 class GeminiProvider(LLMProvider):
     def __init__(self, model: str = "gemini-2.5-flash"):
@@ -381,6 +388,42 @@ class GeminiProvider(LLMProvider):
 
         raise Exception(f"Falha após 3 tentativas com Gemini")
 
+    async def raw_completion(self, system_prompt: str, user_prompt: str) -> str:
+        """Chamada simples ao Gemini para content_planner."""
+        for attempt in range(3):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        self.base_url,
+                        params={"key": self.api_key},
+                        json={
+                            "contents": [
+                                {
+                                    "parts": [
+                                        {"text": f"{system_prompt}\n\n{user_prompt}"}
+                                    ]
+                                }
+                            ],
+                            "generationConfig": {
+                                "temperature": 0.3,
+                                "maxOutputTokens": 2000,
+                            },
+                        },
+                        timeout=aiohttp.ClientTimeout(total=60),
+                    ) as resp:
+                        if resp.status != 200:
+                            body = await resp.text()
+                            raise Exception(f"Gemini API error: {resp.status} - {body}")
+
+                        result = await resp.json()
+                        return result["candidates"][0]["content"]["parts"][0]["text"]
+
+            except Exception as e:
+                logger.warning(f"Tentativa raw_completion {attempt + 1} falhou: {e}")
+                await asyncio.sleep(2)
+
+        raise Exception("Falha após 3 tentativas no raw_completion")
+
 
 class GLMProvider(LLMProvider):
     """Provedor GLM (ChatGLM) - Modelos gratuitos"""
@@ -491,6 +534,49 @@ class GLMProvider(LLMProvider):
                 await asyncio.sleep(10)
 
         raise Exception("Falha ao gerar com GLM")
+
+    async def raw_completion(self, system_prompt: str, user_prompt: str) -> str:
+        """Chamada simples ao GLM para content_planner."""
+        for attempt in range(3):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    headers = {
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    }
+
+                    payload = {
+                        "model": self.model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "temperature": 0.3,
+                        "max_tokens": 2000,
+                    }
+
+                    async with session.post(
+                        f"{self.base_url}/chat/completions",
+                        json=payload,
+                        headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=60),
+                    ) as resp:
+                        if resp.status != 200:
+                            error_text = await resp.text()
+                            raise Exception(
+                                f"GLM API error: {resp.status} - {error_text}"
+                            )
+
+                        result = await resp.json()
+                        return result["choices"][0]["message"]["content"]
+
+            except Exception as e:
+                logger.warning(
+                    f"Tentativa raw_completion GLM {attempt + 1} falhou: {e}"
+                )
+                await asyncio.sleep(2)
+
+        raise Exception("Falha após 3 tentativas no raw_completion GLM")
 
 
 def get_provider(mode: str = "gemini-2.5-flash") -> LLMProvider:

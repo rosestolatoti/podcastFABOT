@@ -53,10 +53,11 @@ function InputPanel({ onGenerateScript }) {
       return;
     }
 
-    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
     setPinPosition({
-      x: rect.right + 8,
-      y: rect.top - 4,
+      x: rect.right + window.scrollX + 8,
+      y: rect.top + window.scrollY - 4,
     });
     setSelectedText(selected);
     setShowPin(true);
