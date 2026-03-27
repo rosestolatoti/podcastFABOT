@@ -134,7 +134,7 @@ async def upload_paste(
         status="PENDING",
         progress=0,
         current_step="Texto enviado, aguardando processamento...",
-        script_json=text,
+        input_text=text,
         llm_mode=llm_mode,
         voice_host=voice_host,
         voice_cohost=voice_cohost,

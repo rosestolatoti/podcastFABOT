@@ -61,10 +61,11 @@ async def process_podcast_job(ctx: dict, job_id: str) -> dict:
 
         from backend.services.ingestor import ingest_file
         from backend.services.llm import get_provider
+        from backend.services.text_splitter import dividir_texto, relatorio_divisao
         from backend.services.tts_orchestrator import TTSOrchestrator
         from backend.services.post_production import PostProductionPipeline
 
-        text = job.script_json
+        text = job.input_text
         if not text and job.files:
             texts = []
             for f in job.files:
@@ -72,32 +73,65 @@ async def process_podcast_job(ctx: dict, job_id: str) -> dict:
                 texts.append(result["text"])
             text = "\n\n".join(texts)
 
-        job.status = "LLM_PROCESSING"
-        job.progress = 20
-        job.current_step = "Gerando roteiro com IA..."
+        job.status = "READING"
+        job.progress = 8
+        job.current_step = "Dividindo texto em seções..."
         db.commit()
 
-        provider = get_provider(job.llm_mode)
-        config = {
-            "target_duration": job.target_duration,
-            "depth_level": job.depth_level,
-            "podcast_type": job.podcast_type,
-            "voice_host": job.voice_host,
-            "voice_cohost": job.voice_cohost,
+        secoes = dividir_texto(text or "")
+        logger.info(f"\n{relatorio_divisao(secoes)}")
+
+        job.status = "LLM_PROCESSING"
+        job.progress = 20
+        job.current_step = f"Gerando roteiro (episódio 1 de {len(secoes)})..."
+        db.commit()
+
+        provider = get_provider(str(job.llm_mode))
+
+        all_segments = []
+        first_script = None
+        for i, secao in enumerate(secoes):
+            if i > 0:
+                job.current_step = f"Gerando roteiro (episódio {i + 1} de {len(secoes)})..."
+                job.progress = 20 + int(20 * i / len(secoes))
+                db.commit()
+
+            config = {
+                "target_duration": job.target_duration,
+                "depth_level": job.depth_level,
+                "podcast_type": job.podcast_type,
+                "voice_host": job.voice_host,
+                "voice_cohost": job.voice_cohost,
+                "section_title": secao.titulo,
+                "episode_number": i + 1,
+                "total_episodes": len(secoes),
+            }
+
+            script = await provider.generate_script(secao.conteudo, config)
+            if first_script is None:
+                first_script = script
+            all_segments.extend(script.get("segments", []))
+
+        combined_script = {
+            "title": job.title,
+            "segments": all_segments,
+            "generated_at": first_script.get("generated_at") if first_script else None,
+            "llm_provider": first_script.get("llm_provider") if first_script else None,
+            "llm_model": first_script.get("llm_model") if first_script else None,
+            "total_episodes": len(secoes),
         }
 
-        script = await provider.generate_script(text, config)
-
-        job.script_json = json.dumps(script, ensure_ascii=False)
+        job.script_json = json.dumps(combined_script, ensure_ascii=False)
         job.status = "SCRIPT_DONE"
         job.progress = 40
         job.current_step = "Roteiro pronto para revisão"
         db.commit()
 
-        return script
+        return combined_script
 
     except Exception as e:
         logger.error(f"Job {job_id} falhou: {e}")
+        db.rollback()
         job = db.query(Job).filter(Job.id == job_id).first()
         if job:
             job.status = "FAILED"
@@ -125,7 +159,7 @@ async def generate_script_only(ctx: dict, job_id: str) -> dict:
         from backend.services.text_splitter import dividir_texto, relatorio_divisao
         from backend.services.llm import get_provider
 
-        text = job.script_json or "Texto não fornecido"
+        text = job.input_text or "Texto não fornecido"
 
         secoes = dividir_texto(text)
         logger.info(f"\n{relatorio_divisao(secoes)}")

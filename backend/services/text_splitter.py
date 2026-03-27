@@ -8,9 +8,13 @@ Problema resolvido:
 
 Lógica de divisão:
   1. Detecta headers ## como divisores naturais de seção
-  2. Se uma seção for maior que MAX_TOKENS, subdivide pelos ### 
+  2. Se uma seção for maior que MAX_TOKENS, subdivide pelos ###
   3. Se ainda for grande, corta por parágrafos mantendo contexto
   4. Cada seção resultante tem entre MIN_TOKENS e MAX_TOKENS
+
+Calibrado para Gemini 2.5 Flash (contexto de 1M+ tokens):
+  MAX_TOKENS = 8000  → input rico por episódio (~32.000 chars)
+  MIN_TOKENS = 800   → evita episódios rasos
 
 Resultado:
   Texto com 9 capítulos → 9 episódios
@@ -22,19 +26,18 @@ import re
 from dataclasses import dataclass
 
 # ─────────────────────────────────────────────────────────────────
-# LIMITES CALIBRADOS PARA llama-3.3-70b-versatile NO GROQ
+# LIMITES CALIBRADOS PARA Gemini 2.5 Flash (contexto de 1M+ tokens)
 # ─────────────────────────────────────────────────────────────────
-# Contexto total do modelo: 128k tokens
-# Input máximo seguro:  3000 tokens (~12.000 chars)
-#   → Deixa ~8000 tokens livres para o output (roteiro completo)
-#   → ~150 segmentos de podcast possíveis = 20-25 min por episódio
+# Input máximo seguro:  8000 tokens (~32.000 chars)
+#   → Deixa espaço amplo para o output (roteiro completo)
+#   → ~200 segmentos de podcast possíveis = 20-25 min por episódio
 #
-# Input mínimo útil:  400 tokens (~1600 chars)
+# Input mínimo útil:  800 tokens (~3200 chars)
 #   → Seções muito pequenas geram episódios rasos
 #   → Abaixo disso, agrupar com a seção seguinte
 
-MAX_TOKENS   = 3000   # máximo por chamada ao LLM
-MIN_TOKENS   = 400    # mínimo para um episódio ter profundidade
+MAX_TOKENS   = 8000   # máximo por chamada ao LLM
+MIN_TOKENS   = 800    # mínimo para um episódio ter profundidade
 CHARS_PER_TOKEN = 4   # estimativa conservadora (português)
 
 
