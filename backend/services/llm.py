@@ -4,27 +4,19 @@ import json
 import logging
 import os
 import re
-from typing import Any
 from datetime import datetime, timezone
-from functools import lru_cache
 
 import aiohttp
 import redis
 from jinja2 import Template
 from pydantic import BaseModel, ValidationError, field_validator
 
-from backend.prompts.script_template_v6 import (
-    SYSTEM_PROMPT_TEMPLATE,
-    USER_PROMPT_TEMPLATE as USER_PROMPT_TEMPLATE_V6,
-)
 from backend.prompts.script_template_v7 import (
     SYSTEM_PROMPT_TEMPLATE as SYSTEM_PROMPT_TEMPLATE_V7,
     USER_PROMPT_TEMPLATE as USER_PROMPT_TEMPLATE_V7,
 )
 from backend.prompts.prompt_variator import gerar_variacoes
 
-SYSTEM_PROMPT_V6 = Template(SYSTEM_PROMPT_TEMPLATE)
-USER_PROMPT_V6 = Template(USER_PROMPT_TEMPLATE_V6)
 SYSTEM_PROMPT_V7 = Template(SYSTEM_PROMPT_TEMPLATE_V7)
 USER_PROMPT_V7 = Template(USER_PROMPT_TEMPLATE_V7)
 from backend.config import settings
@@ -40,8 +32,10 @@ def load_config_variables() -> dict:
         import json
 
         db = SessionLocal()
-        config = db.query(UserConfig).filter(UserConfig.is_active == True).first()
-        db.close()
+        try:
+            config = db.query(UserConfig).filter(UserConfig.is_active == True).first()
+        finally:
+            db.close()
 
         if not config:
             return {}
@@ -126,8 +120,8 @@ class SegmentSchema(BaseModel):
     @classmethod
     def validate_text(cls, v):
         words = v.split()
-        if len(words) > 25:
-            logger.warning(f"Fala com {len(words)} palavras, máximo 25")
+        if len(words) > 40:
+            logger.warning(f"Fala com {len(words)} palavras, máximo 40")
         return v
 
 
@@ -143,8 +137,8 @@ class ScriptSchema(BaseModel):
     def validate_segments(cls, v):
         if not v:
             raise ValueError("Segments não pode estar vazio")
-        if len(v) > 200:
-            raise ValueError("Muito segmentos (max 200)")
+        if len(v) > 500:
+            raise ValueError("Muito segmentos (max 500)")
         return v
 
 
@@ -298,6 +292,14 @@ class GeminiProvider(LLMProvider):
             return False
 
     async def generate_script(self, text: str, config: dict) -> dict:
+        text_hash = compute_text_hash(text)
+        config_hash = compute_config_hash(config)
+
+        cached = cache_manager.get(text_hash, config_hash)
+        if cached:
+            logger.info("Usando roteiro do cache (Gemini)")
+            return cached
+
         config_vars = load_config_variables()
 
         episode_number = config.get("episode_number", 1)
@@ -370,6 +372,7 @@ class GeminiProvider(LLMProvider):
                         logger.info(
                             f"Roteiro gerado com Gemini (V7): {len(script_dict.get('segments', []))} segmentos - abertura: {variacoes.get('abertura', {}).get('id', 'unknown')}"
                         )
+                        cache_manager.set(text_hash, config_hash, script_dict)
                         return script_dict
 
             except Exception as e:
@@ -390,6 +393,14 @@ class GLMProvider(LLMProvider):
         self.model = model
 
     async def generate_script(self, text: str, config: dict) -> dict:
+        text_hash = compute_text_hash(text)
+        config_hash = compute_config_hash(config)
+
+        cached = cache_manager.get(text_hash, config_hash)
+        if cached:
+            logger.info("Usando roteiro do cache (GLM)")
+            return cached
+
         config_vars = load_config_variables()
 
         episode_number = config.get("episode_number", 1)
@@ -472,6 +483,7 @@ class GLMProvider(LLMProvider):
                         logger.info(
                             f"Roteiro gerado com GLM (V7): {len(script_dict.get('segments', []))} segmentos - abertura: {variacoes.get('abertura', {}).get('id', 'unknown')}"
                         )
+                        cache_manager.set(text_hash, config_hash, script_dict)
                         return script_dict
 
             except Exception as e:

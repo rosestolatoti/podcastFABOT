@@ -28,6 +28,7 @@ class Job(Base):
     progress = Column(Integer, default=0)
     current_step = Column(String(255), default="Aguardando...")
 
+    input_text = Column(Text, nullable=True)
     script_json = Column(Text, nullable=True)
     script_edited = Column(Boolean, default=False)
 
