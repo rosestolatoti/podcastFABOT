@@ -7,7 +7,7 @@ import logging.handlers
 from pathlib import Path
 from backend.config import settings
 from backend.database import init_db
-from backend.routers import jobs, upload, health, ocr, config
+from backend.routers import jobs, upload, health, ocr, config, youtube
 
 # Garante que o diretório de logs existe
 Path(settings.LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
@@ -52,6 +52,7 @@ app.include_router(upload.router, prefix="/upload", tags=["upload"])
 app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(ocr.router, prefix="/ocr", tags=["ocr"])
 app.include_router(config.router, tags=["config"])
+app.include_router(youtube.router, prefix="/youtube", tags=["youtube"])
 
 
 @app.get("/")

@@ -25,7 +25,7 @@ const useJobStore = create(
       activeTab: 'roteiro',
       historyOpen: false,
       inputTab: 'arquivos',
-      llmMode: 'gemini-2.5-flash',
+      llmMode: 'nvidia-glm5',
       
       progress: 0,
       progressMessage: '',

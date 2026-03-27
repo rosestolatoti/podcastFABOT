@@ -17,6 +17,10 @@ class JobStatus:
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
     QUEUED = "QUEUED"
+    # Novos statuses para multi-episódio
+    PLANNING = "PLANNING"  # Extraindo conceitos e planejando episódios
+    GENERATING_EPISODES = "GENERATING_EPISODES"  # Gerando episódios
+    EPISODES_DONE = "EPISODES_DONE"  # Todos os episódios gerados
 
 
 class Job(Base):
@@ -49,6 +53,15 @@ class Job(Base):
     playlist = Column(String(100), nullable=True)
 
     error_message = Column(Text, nullable=True)
+
+    # Campos para multi-episódio (Content Planner)
+    episodes_count = Column(Integer, default=1)
+    episodes_json = Column(Text, nullable=True)
+    pipeline_mode = Column(Boolean, default=False)
+    pipeline_status = Column(String(20), default=None)
+    current_episode = Column(Integer, default=0)
+    plano_json = Column(Text, nullable=True)
+    bible_json = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(

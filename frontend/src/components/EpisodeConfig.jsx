@@ -17,12 +17,24 @@ const SPEECH_STYLES = [
   'Descontraído',
 ];
 const LLM_MODES = [
-  { value: 'gemini-2.5-flash', label: '🟢 Gemini 2.5 Flash (Recomendado)' },
+  // NVIDIA APIs (GLM-5, Kimi 2.5, MiniMax 2.5)
+  { value: 'nvidia-glm5', label: '🟣 GLM-5 (NVIDIA) - Principal' },
+  { value: 'nvidia-kimi25', label: '🟣 Kimi 2.5 (NVIDIA)' },
+  { value: 'nvidia-minimax25', label: '🟣 MiniMax 2.5 (NVIDIA)' },
+  
+  // Google Gemini
+  { value: 'gemini-2.5-flash', label: '🟢 Gemini 2.5 Flash' },
   { value: 'gemini-2.5-flash-lite', label: '🟢 Gemini 2.5 Flash-Lite' },
   { value: 'gemini-2.5-pro', label: '🟢 Gemini 2.5 Pro' },
+  
+  // GLM Legacy
   { value: 'glm-4.7-flash', label: '🔵 GLM-4.7-Flash' },
   { value: 'glm-4-flash', label: '🔵 GLM-4-Flash' },
+  
+  // Groq
   { value: 'groq', label: '🟠 Llama 3.3 (Groq)' },
+  
+  // Local
   { value: 'ollama', label: '🐳 Ollama Local' },
 ];
 

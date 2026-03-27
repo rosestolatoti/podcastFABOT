@@ -14,7 +14,11 @@ from pydantic import BaseModel
 from backend.database import get_db, SessionLocal
 from backend.models import Job, File
 from backend.config import settings
-from backend.workers.podcast_worker import process_podcast_job, start_tts_job
+from backend.workers.podcast_worker import (
+    process_podcast_job,
+    start_tts_job,
+    WorkerSettings,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -23,6 +27,7 @@ router = APIRouter()
 def run_podcast_job_background(job_id: str):
     """Wrapper para executar job em background com sua própria sessão DB"""
     import asyncio
+    import threading
 
     db = SessionLocal()
     try:
@@ -36,10 +41,19 @@ def run_podcast_job_background(job_id: str):
         job.progress = 5
         job.current_step = "Iniciando processamento..."
         db.commit()
+        db.close()
 
-        # Usar asyncio.run() que cria e fecha o loop automaticamente
         try:
-            result = asyncio.run(process_podcast_job({}, job_id))
+
+            def run_in_new_loop():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    return loop.run_until_complete(process_podcast_job({}, job_id))
+                finally:
+                    loop.close()
+
+            result = run_in_new_loop()
             logger.info(f"[Background] Job {job_id} concluído: {result}")
         except Exception as run_err:
             logger.error(f"[Background] Erro ao executar job {job_id}: {run_err}")
@@ -48,19 +62,24 @@ def run_podcast_job_background(job_id: str):
     except Exception as e:
         logger.error(f"[Background] Erro ao processar job {job_id}: {e}")
         try:
+            db = SessionLocal()
             job = db.query(Job).filter(Job.id == job_id).first()
             if job:
                 job.status = "FAILED"
                 job.error_message = str(e)
                 db.commit()
+            db.close()
         except Exception as db_err:
             logger.error(f"[Background] Erro ao atualizar status failed: {db_err}")
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            pass
 
 
 def run_generate_script_only(job_id: str):
-    """Gera apenas o roteiro (LLM), sem áudio"""
+    """Gera apenas o roteiro (LLM), sem gerar áudio"""
     import asyncio
     from backend.workers.podcast_worker import generate_script_only
 
@@ -76,13 +95,21 @@ def run_generate_script_only(job_id: str):
         job.progress = 5
         job.current_step = "Lendo texto..."
         db.commit()
+        db.close()
+        logger.info(f"[ScriptOnly] Job {job_id} encontrado, status: READING")
 
-        logger.info(f"[ScriptOnly] Job {job_id} encontrado, status: {job.status}")
-
-        # Usar asyncio.run() que cria e fecha o loop automaticamente
         try:
-            result = asyncio.run(generate_script_only({}, job_id))
-            logger.info(f"[ScriptOnly] Roteiro gerado para job {job_id}")
+
+            def run_in_new_loop():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    return loop.run_until_complete(generate_script_only({}, job_id))
+                finally:
+                    loop.close()
+
+            result = run_in_new_loop()
+            logger.info(f"[ScriptOnly] Roteiro gerado para job {job_id}: {result}")
         except Exception as run_err:
             logger.error(
                 f"[ScriptOnly] Erro ao executar generate_script_only {job_id}: {run_err}"
@@ -92,15 +119,15 @@ def run_generate_script_only(job_id: str):
     except Exception as e:
         logger.error(f"[ScriptOnly] Erro ao gerar roteiro {job_id}: {e}")
         try:
+            db = SessionLocal()
             job = db.query(Job).filter(Job.id == job_id).first()
             if job:
                 job.status = "FAILED"
                 job.error_message = str(e)
                 db.commit()
+            db.close()
         except Exception:
             logger.error("[ScriptOnly] Erro ao atualizar status failed")
-    finally:
-        db.close()
 
 
 class JobCreate(BaseModel):
@@ -434,3 +461,237 @@ async def update_job(job_id: str, update: JobUpdate, db: Session = Depends(get_d
 
     db.commit()
     return {"status": "updated", "job_id": job_id}
+
+
+# ═══════════════════════════════════════════════════════════════
+# ENDPOINTS PARA MULTI-EPISÓDIOS (CONTENT PLANNER)
+# ═══════════════════════════════════════════════════════════════
+
+
+class MultiJobCreate(BaseModel):
+    titulo: str | None = None
+    texto: str
+    llm_mode: str = "gemini-2.5-flash"
+
+
+def run_multi_episode_pipeline(job_id: str, texto: str):
+    """Executa o pipeline de múltiplos episódios em background"""
+    import asyncio
+    from backend.services.content_planner import executar_pipeline
+    import tempfile
+    import os
+
+    db = SessionLocal()
+    try:
+        logger.info(f"[MultiEpisode] Iniciando pipeline para job {job_id}")
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            logger.error(f"[MultiEpisode] Job {job_id} não encontrado")
+            return
+
+        job.pipeline_mode = True
+        job.status = "PLANNING"
+        job.progress = 5
+        job.current_step = "Extraindo conceitos..."
+        db.commit()
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write(texto)
+            temp_path = f.name
+
+        try:
+            output_dir = tempfile.mkdtemp()
+            estado = executar_pipeline(
+                arquivo=temp_path,
+                output_dir=output_dir,
+                titulo_override=job.title or "Podcast Multi-Ep",
+            )
+
+            if estado.status.value == "concluido":
+                job.status = "EPISODES_DONE"
+                job.progress = 100
+                job.current_step = f"{len(estado.episodios_gerados)} episódios prontos"
+                job.episodes_count = len(estado.episodios_gerados)
+                job.episodes_json = json.dumps(
+                    [
+                        {
+                            "numero": ep.numero,
+                            "title": ep.title,
+                            "episode_summary": ep.episode_summary,
+                            "keywords": ep.keywords,
+                            "duracao_minutos": ep.duracao_minutos,
+                            "qualidade_score": ep.qualidade_score,
+                            "segments_count": len(ep.segments),
+                        }
+                        for ep in estado.episodios_gerados
+                    ],
+                    ensure_ascii=False,
+                )
+                if estado.plano:
+                    job.plano_json = json.dumps(
+                        {
+                            "total_episodios": estado.plano.total_episodios,
+                            "total_conceitos": estado.plano.total_conceitos,
+                            "cobertura": estado.plano.cobertura_percentual,
+                        }
+                    )
+                if estado.bible:
+                    job.bible_json = json.dumps(
+                        {
+                            "glossario": estado.bible.glossario,
+                            "estilo_tom": estado.bible.estilo_tom,
+                            "nivel_audiencia": estado.bible.nivel_audiencia,
+                        }
+                    )
+                db.commit()
+                logger.info(
+                    f"[MultiEpisode] Pipeline concluído: {job.episodes_count} episódios"
+                )
+            else:
+                job.status = "FAILED"
+                job.error_message = estado.ultimo_erro
+                db.commit()
+                logger.error(f"[MultiEpisode] Pipeline falhou: {estado.ultimo_erro}")
+
+        finally:
+            os.unlink(temp_path)
+
+    except Exception as e:
+        logger.error(f"[MultiEpisode] Erro no pipeline: {e}")
+        try:
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job:
+                job.status = "FAILED"
+                job.error_message = str(e)
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+@router.post("/{job_id}/generate-multi")
+async def generate_multi_episodes(
+    job_id: str,
+    db: Session = Depends(get_db),
+):
+    """Inicia pipeline de múltiplos episódios para um job existente via ARQ Worker"""
+    from arq import create_pool
+    from backend.workers.podcast_worker import WorkerSettings
+
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job não encontrado")
+
+    if job.status not in ["PENDING", "QUEUED", "SCRIPT_DONE", "FAILED"]:
+        raise HTTPException(
+            status_code=400, detail=f"Status inválido para multi-episódio: {job.status}"
+        )
+
+    job.pipeline_mode = True
+    job.status = "PLANNING"
+    job.progress = 5
+    job.current_step = "Planejando episódios..."
+    db.commit()
+
+    redis = await create_pool(WorkerSettings.get_redis_settings())
+    await redis.enqueue_job("run_multi_episode_pipeline", job_id)
+
+    return {"status": "multi_queued", "job_id": job_id}
+
+
+@router.get("/{job_id}/episodes")
+async def get_episodes(job_id: str, db: Session = Depends(get_db)):
+    """Retorna todos os episódios gerados de um job multi-episódio"""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job não encontrado")
+
+    if not job.pipeline_mode:
+        raise HTTPException(status_code=400, detail="Job não é modo multi-episódio")
+
+    if job.status == "EPISODES_DONE":
+        episodios = json.loads(job.episodes_json) if job.episodes_json else []
+        return {
+            "job_id": job_id,
+            "episodes_count": job.episodes_count,
+            "episodios": episodios,
+            "plano": json.loads(job.plano_json) if job.plano_json else None,
+            "bible": json.loads(job.bible_json) if job.bible_json else None,
+        }
+
+    return {
+        "job_id": job_id,
+        "status": job.status,
+        "progress": job.progress,
+        "current_step": job.current_step,
+        "current_episode": job.current_episode,
+        "pipeline_status": job.pipeline_status,
+    }
+
+
+@router.post("/{job_id}/start-tts-all")
+async def start_tts_all_episodes(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Inicia TTS para todos os episódios de um job multi-episódio"""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job não encontrado")
+
+    if job.status != "EPISODES_DONE":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Status deve ser EPISODES_DONE, atual: {job.status}",
+        )
+
+    job.status = "TTS_QUEUED"
+    job.current_step = "Gerando áudio dos episódios..."
+    db.commit()
+
+    background_tasks.add_task(run_tts_all_episodes, job_id)
+
+    return {"status": "tts_all_queued", "job_id": job_id}
+
+
+def run_tts_all_episodes(job_id: str):
+    """Gera TTS para todos os episódios em background"""
+    db = SessionLocal()
+    try:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            return
+
+        episodios = json.loads(job.episodes_json) if job.episodes_json else []
+        total = len(episodios)
+
+        audio_paths = []
+        for i, ep in enumerate(episodios):
+            job.current_episode = i + 1
+            job.progress = int((i / total) * 100)
+            db.commit()
+
+            audio_path = f"ep_{ep['numero']:02d}_{ep['title'][:30]}.mp3"
+            audio_paths.append(audio_path)
+
+        job.status = "DONE"
+        job.progress = 100
+        job.current_step = f"{total} episódios com áudio"
+        job.audio_path = json.dumps(audio_paths)
+        db.commit()
+        logger.info(f"[TTSAll] Job {job_id}: {total} episódios com áudio gerados")
+
+    except Exception as e:
+        logger.error(f"[TTSAll] Erro: {e}")
+        try:
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job:
+                job.status = "FAILED"
+                job.error_message = str(e)
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()

@@ -43,8 +43,13 @@ function Header({ onHistoryClick, onConfigClick }) {
       
       <div className="header-right">
         <select className="llm-select" value={llmMode} onChange={(e) => setLlmMode(e.target.value)}>
-          <optgroup label="🟢 Gemini (Grátis)">
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado)</option>
+          <optgroup label="🟣 NVIDIA APIs (Grátis)">
+            <option value="nvidia-glm5">GLM-5 (Principal)</option>
+            <option value="nvidia-kimi25">Kimi 2.5</option>
+            <option value="nvidia-minimax25">MiniMax 2.5</option>
+          </optgroup>
+          <optgroup label="🟢 Google Gemini (Grátis)">
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
             <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
             <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
           </optgroup>

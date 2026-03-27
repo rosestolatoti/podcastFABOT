@@ -10,6 +10,7 @@ import InputPanel from './components/InputPanel';
 import ScriptPanel from './components/ScriptPanel';
 import PlayerPanel from './components/PlayerPanel';
 import ActiveJobsBar from './components/ActiveJobsBar';
+import ProgressOverlay from './components/ProgressOverlay';
 import './styles/tokens.css';
 import './App.css';
 
@@ -36,6 +37,7 @@ function AppContent() {
   } = useJobStore();
   
   const [showConfig, setShowConfig] = useState(false);
+  const [showProgress, setShowProgress] = useState(false);
   
   useHealthCheck();
   useVoices();
@@ -76,7 +78,7 @@ function AppContent() {
     loadHistory();
   }, [setJobHistory]);
   
-  const MAX_POLL_TIME = 10 * 60 * 1000; // 10 minutos
+  const MAX_POLL_TIME = 10 * 60 * 1000;
 
   const handleGenerateScript = useCallback(async (data) => {
     console.log('[handleGenerateScript] Recebido:', data);
@@ -97,6 +99,10 @@ function AppContent() {
           podcast_type: 'monologue',
           target_duration: '10',
         });
+        
+        if (data.topics && data.topics.length > 0) {
+          params.append('topics', JSON.stringify(data.topics));
+        }
         
         const response = await axios.post(`http://localhost:8000/upload/paste?${params.toString()}`);
         jobId = response.data.job_id;
@@ -123,6 +129,8 @@ function AppContent() {
         };
         addActiveJob(jobData);
         setCurrentJobId(jobId);
+        setCurrentJob(jobData);
+        setShowProgress(true);
         setActiveTab('roteiro');
         
         await axios.post(`http://localhost:8000/jobs/${jobId}/generate-script`);
@@ -229,102 +237,6 @@ function AppContent() {
     }
   }, [currentJobId, currentJob, setCurrentJob, addActiveJob, updateActiveJob, setActiveTab]);
   
-  const handleGeneratePodcast = useCallback(async (data) => {
-    console.log('[handleGeneratePodcast] Recebido:', data);
-    
-    let jobId = null;
-    const pollStartTime = Date.now();
-    
-    try {
-      if (data.text && data.text.trim().length >= 100) {
-        const titlePreview = data.text.trim().substring(0, 50).replace(/\n/g, ' ');
-        const autoTitle = titlePreview.length > 45 ? titlePreview + '...' : titlePreview;
-        
-        const params = new URLSearchParams({
-          title: autoTitle || 'Novo Podcast',
-          text: data.text,
-          llm_mode: llmMode,
-          voice_host: 'pm_alex',
-          podcast_type: 'monologue',
-          target_duration: '10',
-        });
-        
-        const response = await axios.post(`http://localhost:8000/upload/paste?${params.toString()}`);
-        jobId = response.data.job_id;
-      } else if (data.files && data.files.length > 0) {
-        const formData = new FormData();
-        formData.append('file', data.files[0]);
-        formData.append('title', data.files[0].name.replace(/\.[^.]+$/, ''));
-        formData.append('llm_mode', llmMode);
-        formData.append('voice_host', 'pm_alex');
-        
-        const response = await axios.post('http://localhost:8000/upload/', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        });
-        jobId = response.data.job_id;
-      }
-      
-      if (jobId) {
-        const jobData = {
-          id: jobId,
-          title: data.text?.trim().substring(0, 50) || 'Novo Podcast',
-          status: 'PENDING',
-          progress: 10,
-          current_step: 'Iniciando...'
-        };
-        addActiveJob(jobData);
-        setCurrentJobId(jobId);
-        
-        await axios.post(`http://localhost:8000/jobs/${jobId}/start`);
-        
-        const pollJob = async () => {
-          try {
-            if (Date.now() - pollStartTime > MAX_POLL_TIME) {
-              updateActiveJob(jobId, { 
-                status: 'FAILED', 
-                current_step: 'Tempo limite excedido (10 min). Verifique o Worker e tente novamente.' 
-              });
-              return;
-            }
-            
-            const res = await axios.get(`http://localhost:8000/jobs/${jobId}`);
-            updateActiveJob(jobId, {
-              status: res.data.status,
-              progress: res.data.progress || 50,
-              current_step: res.data.current_step || 'Processando...',
-              script_json: res.data.script_json
-            });
-            setCurrentJob(res.data);
-            
-            const status = res.data.status;
-            if (status === 'DONE') {
-              updateActiveJob(jobId, { progress: 100, current_step: 'Podcast pronto!' });
-              setActiveTab('player');
-            } else if (status === 'FAILED') {
-              updateActiveJob(jobId, { current_step: 'Erro: ' + (res.data.error_message || 'Falha') });
-            } else if (!['DONE', 'FAILED', 'CANCELLED'].includes(status)) {
-              setTimeout(pollJob, 2000);
-            }
-          } catch (e) {
-            console.error('Poll error:', e);
-            setTimeout(pollJob, 3000);
-          }
-        };
-        pollJob();
-      }
-    } catch (error) {
-      console.error('[handleGeneratePodcast] Erro:', error);
-      const errorMsg = error.response?.data?.detail || error.message || 'Erro desconhecido';
-      if (jobId) {
-        updateActiveJob(jobId, { status: 'FAILED', current_step: errorMsg });
-      }
-    } finally {
-      if (!jobId) {
-        console.warn('[handleGeneratePodcast] Job não foi criado, limpando estado...');
-      }
-    }
-  }, [setCurrentJob, setCurrentJobId, setActiveTab, addActiveJob, updateActiveJob, llmMode]);
-  
   return (
     <div className="app">
       <Header onConfigClick={() => setShowConfig(true)} />
@@ -333,7 +245,6 @@ function AppContent() {
         <div className="column column-input">
           <InputPanel 
             onGenerateScript={handleGenerateScript}
-            onGeneratePodcast={handleGeneratePodcast}
           />
         </div>
         
@@ -351,6 +262,11 @@ function AppContent() {
       <ActiveJobsBar />
       
       {showConfig && <ConfigPanel onClose={() => setShowConfig(false)} />}
+      
+      <ProgressOverlay 
+        visible={showProgress || (currentJob && ['READING', 'LLM_PROCESSING', 'TTS_PROCESSING', 'PLANNING'].includes(currentJob.status))}
+        onClose={() => setShowProgress(false)}
+      />
     </div>
   );
 }

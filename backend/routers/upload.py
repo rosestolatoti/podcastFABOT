@@ -119,12 +119,31 @@ async def upload_paste(
     podcast_type: str = "monologue",
     target_duration: int = 10,
     depth_level: str = "normal",
+    pipeline_mode: bool = False,
+    topics: str | None = None,
     db: Session = Depends(get_db),
 ):
     if not text or len(text.strip()) < 100:
         raise HTTPException(
             status_code=400, detail="Texto muito curto (mínimo 100 caracteres)"
         )
+
+    validated_topics = None
+    if topics:
+        try:
+            import json
+
+            parsed = json.loads(topics)
+            if isinstance(parsed, list) and all(isinstance(t, str) for t in parsed):
+                if len(parsed) > 10:
+                    raise HTTPException(
+                        status_code=400, detail="Máximo 10 tópicos permitidos"
+                    )
+                validated_topics = topics
+                logger.info(f"Tópicos manuais recebidos: {parsed}")
+        except json.JSONDecodeError:
+            logger.warning(f"Topics inválido (não é JSON): {topics}")
+            validated_topics = None
 
     job_id = str(uuid.uuid4())
 
@@ -141,20 +160,10 @@ async def upload_paste(
         podcast_type=podcast_type,
         target_duration=target_duration,
         depth_level=depth_level,
+        pipeline_mode=pipeline_mode,
+        content_plan=validated_topics,
     )
     db.add(job)
     db.commit()
-
-    try:
-        from arq import create_pool
-        from backend.workers.podcast_worker import WorkerSettings
-
-        redis = await create_pool(WorkerSettings.get_redis_settings())
-        await redis.enqueue_job("process_podcast_job", job_id)
-        job.status = "QUEUED"
-        job.current_step = "Job enfileirado para processamento"
-        db.commit()
-    except Exception as e:
-        logger.warning(f"Erro ao enfileirar job: {e}")
 
     return {"job_id": job_id, "status": "uploaded", "char_count": len(text)}

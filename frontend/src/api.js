@@ -19,6 +19,10 @@ export const urls = {
     stream: (id) => `${API_BASE}/jobs/${id}/stream`,
     upload: `${API_BASE}/upload/`,
     uploadPaste: `${API_BASE}/upload/paste`,
+    // Multi-episódio
+    generateMulti: (id) => `${API_BASE}/jobs/${id}/generate-multi`,
+    episodes: (id) => `${API_BASE}/jobs/${id}/episodes`,
+    startTTSAll: (id) => `${API_BASE}/jobs/${id}/start-tts-all`,
   },
   audio: (folder) => `${API_BASE}/audio/${folder}/final.mp3`,
   download: (id) => `${API_BASE}/download/${id}`,

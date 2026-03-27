@@ -10,7 +10,47 @@ function ScriptPanel({ onGenerateAudio }) {
   const [saving, setSaving] = useState(false);
   const [editingIndex, setEditingIndex] = useState(null);
   const [config, setConfig] = useState(null);
-  
+  const [episodes, setEpisodes] = useState([]);
+  const [pipelineProgress, setPipelineProgress] = useState(null);
+  const [showMetricsDashboard, setShowMetricsDashboard] = useState(false);
+
+  const PIPELINE_STEPS = [
+    { id: 'PENDENTE', label: 'Pendente', icon: '⏳' },
+    { id: 'PLANNING', label: 'Planejando', icon: '📋' },
+    { id: 'EXTRACAO_OK', label: 'Extraindo Conceitos', icon: '🔍' },
+    { id: 'CONCEITOS_OK', label: 'Conceitos Mapeados', icon: '📊' },
+    { id: 'PLANO_OK', label: 'Plano Gerado', icon: '📝' },
+    { id: 'COBERTURA_OK', label: 'Cobertura Validada', icon: '✅' },
+    { id: 'BIBLE_OK', label: 'Bible Criada', icon: '📖' },
+    { id: 'GERANDO', label: 'Gerando Episódios', icon: '🎙️' },
+    { id: 'EPISODES_DONE', label: 'Episódios Prontos', icon: '🎉' },
+    { id: 'TTS_QUEUED', label: 'TTS na Fila', icon: '🔊' },
+    { id: 'DONE', label: 'Concluído', icon: '✅' },
+  ];
+
+  const getCurrentStepIndex = (status) => {
+    const index = PIPELINE_STEPS.findIndex(s => s.id === status);
+    return index >= 0 ? index : 0;
+  };
+
+  const loadEpisodes = async (jobId) => {
+    try {
+      const response = await axios.get(`http://localhost:8000/jobs/${jobId}/episodes`);
+      if (response.data.episodios) {
+        setEpisodes(response.data.episodios);
+      }
+      setPipelineProgress(response.data);
+    } catch (error) {
+      console.error('Erro ao carregar episódios:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (currentJob?.pipeline_mode && currentJob?.id) {
+      loadEpisodes(currentJob.id);
+    }
+  }, [currentJob?.id, currentJob?.status]);
+
   const loadConfig = async () => {
     try {
       const response = await axios.get('http://localhost:8000/config/');
@@ -42,19 +82,20 @@ function ScriptPanel({ onGenerateAudio }) {
   
   useEffect(() => {
     console.log('Current job:', currentJob?.id, 'script_json:', currentJob?.script_json ? 'YES' : 'NO');
-    if (currentJob?.script_json) {
+    const raw = currentJob?.script_json;
+    // Valid JSON must be a string starting with '{' or '['
+    const isValidJson = raw && typeof raw === 'string' && /^\s*[\[{]/.test(raw);
+    
+    if (isValidJson) {
       try {
-        let script;
-        if (typeof currentJob.script_json === 'string') {
-          script = JSON.parse(currentJob.script_json);
-        } else {
-          script = currentJob.script_json;
-        }
+        const script = JSON.parse(raw);
         console.log('Parsed script, segments:', script.segments?.length);
         setScriptData(script);
         setEditedSegments(script.segments || []);
       } catch (e) {
         console.error('Parse error:', e);
+        setScriptData(null);
+        setEditedSegments([]);
       }
     } else {
       setScriptData(null);
@@ -130,7 +171,98 @@ function ScriptPanel({ onGenerateAudio }) {
             {scriptData?.title || 'Roteiro'} • {editedSegments.length} falas
           </span>
         )}
+        {currentJob?.pipeline_mode && episodes.length > 0 && (
+          <button 
+            className={`metrics-btn ${showMetricsDashboard ? 'active' : ''}`}
+            onClick={() => setShowMetricsDashboard(!showMetricsDashboard)}
+            title="Ver métricas dos episódios"
+          >
+            📊
+          </button>
+        )}
       </div>
+
+      {currentJob?.pipeline_mode && showMetricsDashboard && episodes.length > 0 && (
+        <div className="metrics-dashboard">
+          <div className="metrics-header">
+            <span className="metrics-title">📈 Métricas</span>
+            <span className="metrics-count">{episodes.length} episódio{episodes.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div className="metrics-summary">
+            <div className="metric-item">
+              <span className="metric-icon">⏱️</span>
+              <span className="metric-value">
+                {episodes.reduce((acc, ep) => acc + (ep.duracao_minutos || 0), 0).toFixed(0)} min
+              </span>
+              <span className="metric-label">total</span>
+            </div>
+            <div className="metric-item">
+              <span className="metric-icon">⭐</span>
+              <span className="metric-value">
+                {(episodes.reduce((acc, ep) => acc + (ep.qualidade_score || 0), 0) / episodes.length).toFixed(1)}
+              </span>
+              <span className="metric-label">qualidade</span>
+            </div>
+            <div className="metric-item">
+              <span className="metric-icon">🎙️</span>
+              <span className="metric-value">
+                {episodes.reduce((acc, ep) => acc + (ep.segments_count || 0), 0)}
+              </span>
+              <span className="metric-label">segmentos</span>
+            </div>
+          </div>
+          <div className="episodes-vertical-list">
+            {episodes.map((ep, idx) => (
+              <div key={idx} className="episode-vertical-item">
+                <div className="episode-vertical-header">
+                  <span className="episode-badge">Ep {ep.numero}</span>
+                  <span className="episode-time">{ep.duracao_minutos ? `${ep.duracao_minutos.toFixed(1)} min` : '-'}</span>
+                  <span className={`episode-quality-badge ${ep.qualidade_score >= 8 ? 'good' : ep.qualidade_score >= 6 ? 'medium' : 'low'}`}>
+                    ★{ep.qualidade_score || '-'}
+                  </span>
+                </div>
+                <div className="episode-vertical-title">{ep.title}</div>
+                {ep.keywords && ep.keywords.length > 0 && (
+                  <div className="episode-vertical-keywords">
+                    {ep.keywords.slice(0, 2).map((kw, i) => (
+                      <span key={i} className="kw-chip">{kw}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {currentJob?.pipeline_mode && currentJob?.status !== 'DONE' && (
+        <div className="pipeline-progress">
+          <div className="pipeline-steps">
+            {PIPELINE_STEPS.slice(1, 9).map((step, idx) => {
+              const currentIdx = getCurrentStepIndex(currentJob?.status);
+              const isActive = idx < currentIdx;
+              const isCurrent = idx === currentIdx;
+              return (
+                <div
+                  key={step.id}
+                  className={`pipeline-step ${isActive ? 'done' : ''} ${isCurrent ? 'current' : ''}`}
+                >
+                  <div className="step-icon">{step.icon}</div>
+                  <div className="step-label">{step.label}</div>
+                </div>
+              );
+            })}
+          </div>
+          {currentJob?.current_step && (
+            <div className="pipeline-status">{currentJob.current_step}</div>
+          )}
+          {episodes.length > 0 && (
+            <div className="episodes-count">
+              {episodes.length} episódio{episodes.length !== 1 ? 's' : ''} planejado{episodes.length !== 1 ? 's' : ''}
+            </div>
+          )}
+        </div>
+      )}
       
       {!hasScript ? (
         <div className="empty-state">

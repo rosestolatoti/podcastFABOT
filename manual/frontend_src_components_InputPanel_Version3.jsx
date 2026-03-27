@@ -15,6 +15,7 @@ function InputPanel({ onGenerateScript }) {
   const [previewPdf, setPreviewPdf] = useState(null);
   const [viewMode, setViewMode] = useState('input');
 
+  // ═══ MARCA-TEXTO: Estados ═══
   const [topics, setTopics] = useState([]);
   const [showPin, setShowPin] = useState(false);
   const [pinPosition, setPinPosition] = useState({ x: 0, y: 0 });
@@ -32,7 +33,9 @@ function InputPanel({ onGenerateScript }) {
     f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
   );
 
+  // ═══ MARCA-TEXTO: Detectar seleção de texto ═══
   const handleTextMouseUp = useCallback((e) => {
+    // Limpar timeout anterior
     if (pinTimeoutRef.current) {
       clearTimeout(pinTimeoutRef.current);
     }
@@ -41,6 +44,7 @@ function InputPanel({ onGenerateScript }) {
     const selected = selection?.toString().trim();
 
     if (!selected || selected.length < 2 || selected.length > 100) {
+      // Esconder pin após delay (permite clicar no pin)
       pinTimeoutRef.current = setTimeout(() => {
         setShowPin(false);
         setSelectedText('');
@@ -53,6 +57,7 @@ function InputPanel({ onGenerateScript }) {
       return;
     }
 
+    // Calcular posição do pin perto da seleção
     const rect = selection.getRangeAt(0).getBoundingClientRect();
     setPinPosition({
       x: rect.right + 8,
@@ -62,12 +67,14 @@ function InputPanel({ onGenerateScript }) {
     setShowPin(true);
   }, [topics.length]);
 
+  // ═══ MARCA-TEXTO: Adicionar tópico ═══
   const handleAddTopic = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
 
     if (!selectedText || topics.length >= MAX_TOPICS) return;
 
+    // Verificar se já existe
     const exists = topics.some(
       t => t.text.toLowerCase() === selectedText.toLowerCase()
     );
@@ -84,23 +91,29 @@ function InputPanel({ onGenerateScript }) {
     setShowPin(false);
     setSelectedText('');
 
+    // Limpar seleção do textarea
     window.getSelection()?.removeAllRanges();
   }, [selectedText, topics]);
 
+  // ═══ MARCA-TEXTO: Remover tópico ═══
   const handleRemoveTopic = useCallback((index) => {
     setTopics(prev => {
       const updated = prev.filter((_, i) => i !== index);
+      // Renumerar
       return updated.map((t, i) => ({ ...t, order: i + 1 }));
     });
   }, []);
 
+  // ═══ MARCA-TEXTO: Limpar todos os tópicos ═══
   const handleClearTopics = useCallback(() => {
     setTopics([]);
   }, []);
 
+  // ═══ MARCA-TEXTO: Drag & Drop para reordenar ═══
   const handleDragStart = useCallback((e, index) => {
     setDragIndex(index);
     e.dataTransfer.effectAllowed = 'move';
+    // Imagem de drag transparente (para manter visual do chip)
     const dragImage = e.target.cloneNode(true);
     dragImage.style.opacity = '0.8';
     dragImage.style.position = 'absolute';
@@ -133,6 +146,7 @@ function InputPanel({ onGenerateScript }) {
       const updated = [...prev];
       const [moved] = updated.splice(dragIndex, 1);
       updated.splice(dropIndex, 0, moved);
+      // Renumerar
       return updated.map((t, i) => ({ ...t, order: i + 1 }));
     });
 
@@ -140,9 +154,11 @@ function InputPanel({ onGenerateScript }) {
     setDragOverIndex(null);
   }, [dragIndex]);
 
+  // ═══ ESCONDER PIN quando clica fora ═══
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (e.target.closest('.pin-button')) return;
+      // Delay para permitir clicar no pin
       pinTimeoutRef.current = setTimeout(() => {
         setShowPin(false);
       }, 150);
@@ -152,6 +168,7 @@ function InputPanel({ onGenerateScript }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // ═══ HANDLERS EXISTENTES (sem mudanças) ═══
   const handleDragOverFile = useCallback((e) => {
     e.preventDefault();
     setIsDragging(true);
@@ -218,15 +235,16 @@ function InputPanel({ onGenerateScript }) {
     setFiles([]);
     setPreviewPdf(null);
     setViewMode('input');
-    setTopics([]);
+    setTopics([]);  // ← NOVO: Limpar tópicos também
   }, []);
 
+  // ═══ GERAR ROTEIRO (modificado para enviar topics) ═══
   const handleGenerateScriptClick = useCallback(() => {
     if (text.trim().length < 100 && files.length === 0) return;
     onGenerateScript({
       text,
       files,
-      topics: topics.map(t => t.text),
+      topics: topics.map(t => t.text),  // ← NOVO: Enviar array de strings
     });
   }, [text, files, topics, onGenerateScript]);
 
@@ -237,6 +255,7 @@ function InputPanel({ onGenerateScript }) {
     currentJob.status &&
     activeStatuses.includes(currentJob.status);
 
+  // ═══ TEXTO DO BOTÃO (dinâmico) ═══
   const getButtonText = () => {
     if (isProcessing) return '⏳ Gerando...';
     if (topics.length > 0) {
@@ -351,6 +370,7 @@ function InputPanel({ onGenerateScript }) {
                 </div>
               ) : (
                 <div className="text-tab">
+                  {/* ═══ TEXTAREA COM MARCA-TEXTO ═══ */}
                   <textarea
                     ref={textareaRef}
                     className={`text-input ${text.length > 0 ? 'highlighter-mode' : ''}`}
@@ -362,6 +382,7 @@ function InputPanel({ onGenerateScript }) {
                     onMouseUp={handleTextMouseUp}
                   />
 
+                  {/* ═══ BOTÃO 📌 FLUTUANTE ═══ */}
                   {showPin && (
                     <button
                       className="pin-button"
@@ -377,6 +398,7 @@ function InputPanel({ onGenerateScript }) {
                     </button>
                   )}
 
+                  {/* ═══ LISTA DE TÓPICOS MARCADOS ═══ */}
                   {topics.length > 0 && (
                     <div className="topics-container">
                       <div className="topics-header">
@@ -430,6 +452,7 @@ function InputPanel({ onGenerateScript }) {
                     </div>
                   )}
 
+                  {/* ═══ INDICADOR DE MARCA-TEXTO (quando não tem tópicos) ═══ */}
                   {topics.length === 0 && text.length > 100 && (
                     <div className="highlighter-hint">
                       <span className="highlighter-hint-icon">🖍️</span>

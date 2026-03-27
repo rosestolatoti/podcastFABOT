@@ -495,7 +495,16 @@ class GLMProvider(LLMProvider):
 
 def get_provider(mode: str = "gemini-2.5-flash") -> LLMProvider:
     mode = mode.lower()
+
+    # Importar providers NVIDIA aqui para evitar circular import
+    from backend.services.nvidia_provider import (
+        NVIDIAGLM5Provider,
+        NVIDIAKimi25Provider,
+        NVIDIAMiniMax25Provider,
+    )
+
     providers = {
+        # Google Gemini
         "gemini": lambda: GeminiProvider("gemini-2.5-flash"),
         "gemini-2.0-flash": lambda: GeminiProvider("gemini-2.0-flash"),
         "gemini-2.0-flash-lite": lambda: GeminiProvider("gemini-2.0-flash-lite"),
@@ -503,10 +512,23 @@ def get_provider(mode: str = "gemini-2.5-flash") -> LLMProvider:
         "gemini-2.5-flash-lite": lambda: GeminiProvider("gemini-2.5-flash-lite"),
         "gemini-2.5-pro": lambda: GeminiProvider("gemini-2.5-pro"),
         "gemini-1.5-flash": lambda: GeminiProvider("gemini-1.5-flash"),
+        # GLM (BigModel.cn)
         "glm": lambda: GLMProvider("glm-4.7-flash"),
         "glm-4-flash": lambda: GLMProvider("glm-4-flash"),
         "glm-4.7-flash": lambda: GLMProvider("glm-4.7-flash"),
         "glm-4": lambda: GLMProvider("glm-4"),
+        # NVIDIA APIs (GLM-5, Kimi 2.5, MiniMax 2.5)
+        "nvidia-glm5": lambda: NVIDIAGLM5Provider(),
+        "nvidia-kimi25": lambda: NVIDIAKimi25Provider(),
+        "nvidia-kimi": lambda: NVIDIAKimi25Provider(),
+        "nvidia-minimax25": lambda: NVIDIAMiniMax25Provider(),
+        "nvidia-minimax": lambda: NVIDIAMiniMax25Provider(),
+        # Aliases para compatibility
+        "glm5": lambda: NVIDIAGLM5Provider(),
+        "kimi25": lambda: NVIDIAKimi25Provider(),
+        "kimi-k2.5": lambda: NVIDIAKimi25Provider(),
+        "minimax25": lambda: NVIDIAMiniMax25Provider(),
+        "minimax-m2.5": lambda: NVIDIAMiniMax25Provider(),
     }
 
     provider_fn = providers.get(mode)

@@ -39,6 +39,11 @@ class Settings:
     OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
     GLM_API_KEY = os.getenv("GLM_API_KEY", "")
 
+    # NVIDIA APIs (GLM-5, Kimi 2.5, MiniMax 2.5)
+    NVIDIA_API_KEY_GLM5 = os.getenv("NVIDIA_API_KEY_GLM5", "")
+    NVIDIA_API_KEY_KIMI = os.getenv("NVIDIA_API_KEY_KIMI", "")
+    NVIDIA_API_KEY_MINIMAX = os.getenv("NVIDIA_API_KEY_MINIMAX", "")
+
     CORS_ORIGINS = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
