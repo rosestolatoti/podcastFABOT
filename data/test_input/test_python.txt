@@ -1,0 +1,23 @@
+Python Fundamentals
+
+Python é uma linguagem de programação de alto nível, interpretada e orientada a objetos.
+Foi criada por Guido van Rossum em 1991. Python é conhecida por sua sintaxe simples e legibilidade.
+A linguagem suporta múltiplos paradigmas de programação incluindo programação procedural,
+orientada a objetos e funcional. Python tem uma vasta biblioteca padrão que inclui módulos
+para manipulação de arquivos, rede, regex, matemática e muito mais. A filosofia do Python
+emphasiza a legibilidade do código através do uso de indentação significativa.
+
+Variáveis em Python são dinamicamente tipadas, o que significa que não é necessário
+declarar o tipo de uma variável antes de usá-la. O tipo é inferido em tempo de execução.
+Python suporta vários tipos de dados básicos incluindo inteiros, floats, strings, booleanos,
+listas, tuplas e dicionários. Cada tipo tem operações específicas que podem ser aplicadas.
+
+Controle de fluxo em Python usa indentação para delimitar blocos de código.
+Estruturas condicionais incluem if, elif e else. Loops incluem for e while.
+A função range() é comumente usada com loops for para iterar sobre sequências numéricas.
+List comprehensions oferecem uma forma concisa de criar listas baseadas em iteráveis.
+
+Funções em Python são definidas usando a palavra-chave def seguida do nome da função
+e parênteses contendo os parâmetros. Funções podem retornar valores usando return.
+Python suporta argumentos padrão, argumentos nomeados e número variável de argumentos.
+Decorators são funções que modificam o comportamento de outras funções.
