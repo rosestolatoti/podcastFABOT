@@ -2222,3 +2222,164 @@ MIT License
 **PRODUZIDO POR: FABIO ROSESTOLATO**
 
 FABOT Podcast Studio - Transformando texto em conhecimento 🎙️
+
+---
+
+## 📜 Histórico de Atualizações - 28/03/2026
+
+### Sistema de Inicialização Completo + Ícone Desktop v2.3.0
+
+**Duração:** Sessão de atualização e refinamento
+
+---
+
+### 🎯 ATUALIZAÇÕES IMPLEMENTADAS
+
+#### 1. Ícone Desktop Atualizado (v2.3.0)
+
+**Arquivo:** `/home/fabiorjvr/Área de trabalho/FABOT-PODCAST.desktop`
+
+**Alterações:**
+- Versão: 1.5.0 → **2.3.0**
+- Ícone: `fabot-mic.png` (256x256)
+- Categorias atualizadas: Audio;Music;AudioVideo;Network;Education;
+- Keywords: podcast;ia;audio;tts;education;python;gemini;
+
+```ini
+[Desktop Entry]
+Version=2.3.0
+Name=FABOT - Podcast Studio
+Icon=/home/fabiorjvr/.local/share/icons/hicolor/256x256/apps/fabot-mic.png
+Categories=Audio;Music;AudioVideo;Network;Education;
+Keywords=podcast;ia;audio;tts;education;python;gemini;
+```
+
+---
+
+#### 2. Script de Inicialização Completo
+
+**Arquivo:** `/home/fabiorjvr/Área de trabalho/FABOT-PODCAST.sh`
+
+O script agora verifica e inicia **TODOS** os serviços necessários:
+
+```bash
+#!/bin/bash
+# FABOT Podcast Studio v2.3.0 - Inicialização Completa
+
+# 1. Verificar/Iniciar Redis (porta 6379)
+# 2. Vericiar Backend FastAPI (porta 8000)
+# 3. Vericiar Worker ARQ (background)
+# 4. Vericiar Frontend React (porta 3000)
+# 5. Abrir Chrome em http://localhost:3000
+```
+
+**Serviços Verificados:**
+| Serviço | Porta | Status Verificado |
+|---------|-------|-------------------|
+| Redis | 6379 | ✅ `redis-cli ping` |
+| Backend | 8000 | ✅ `curl /health/` |
+| Worker ARQ | Background | ✅ `ps aux \| grep run_worker` |
+| Frontend | 3000 | ✅ `curl localhost:3000` |
+
+---
+
+#### 3. NVIDIA TTS Integration
+
+**Arquivos Adicionados:**
+- `backend/services/nvidia_provider.py` - Provedor NVIDIA Chat Completions
+- `backend/services/nvidia_router.py` - Router API NVIDIA com fallback
+
+**LLMs NVIDIA Disponíveis:**
+| Modelo | Nome no Select | Status |
+|--------|----------------|--------|
+| GLM-5 | `nvidia-glm5` | ⚠️ Connection Error |
+| Kimi 2.5 | `nvidia-kimi25` | ✅ Funcionando |
+| MiniMax 2.5 | `nvidia-minimax25` | ✅ Backup |
+
+---
+
+#### 4. YouTube Transcription
+
+**Arquivos Adicionados:**
+- `backend/routers/youtube.py` - Router API para YouTube
+- `backend/services/youtube_transcriber.py` - Serviço de transcrição
+- `frontend/src/components/YouTubePanel.jsx` - Interface visual
+- `frontend/src/components/YouTubePanel.css` - Estilos
+
+**Funcionalidades:**
+- Extrai legendas de vídeos do YouTube
+- Tradução via Gemini
+- Interface visual no frontend
+
+---
+
+#### 5. Módulo TESTE2_INTEGRATION
+
+**Diretório:** `TESTE2_INTEGRATION/`
+
+Sistema de pipeline modular para extração e processamento de conteúdo:
+
+```
+TESTE2_INTEGRATION/
+├── README_IA.md            # Documentação do sistema
+├── api_router.py           # Roteador de APIs
+├── concept_extractor.py    # Extrator de conceitos
+├── content_bible.py        # Referência de conteúdo
+├── coverage_check.py       # Verificação de cobertura
+├── decisor.py             # Decisor de episódios
+├── extractor.py           # Extrator de blocos
+├── generator.py          # Gerador de roteiros
+├── grouper.py            # Agrupador de conceitos
+├── models.py             # Modelos de dados
+├── pipeline.py           # Orquestrador
+└── validator.py         # Validador
+```
+
+---
+
+### 📊 COMMITS REALIZADOS
+
+| Commit | Descrição | Arquivos |
+|--------|-----------|----------|
+| `75880a0` | Player Spotify + Multi-episódio | PlayerPanel, ScriptPanel, InputPanel |
+| `ee7169a` | Documentação README | README.md |
+| `969b3a8` | NVIDIA TTS + YouTube + Sistema Modular | 33 arquivos novos |
+
+---
+
+### ✅ CHECKLIST DE VERIFICAÇÃO
+
+```bash
+# Ícone atualizado
+grep "Version=2.3.0" ~/Área\ de\ trabalho/FABOT-PODCAST.desktop
+
+# Script de inicialização
+bash ~/Área\ de\ trabalho/FABOT-PODCAST.sh
+
+# Backend rodando
+curl http://localhost:8000/health/
+
+# Frontend acessível
+curl http://localhost:3000 > /dev/null && echo "OK"
+
+# Worker ARQ ativo
+ps aux | grep run_worker | grep -v grep
+```
+
+---
+
+### 📝 LIÇÕES APRENDIDAS
+
+1. **Ícone .desktop precisa de permissões de execução** para aparecer no menu
+2. **Worker ARQ deve iniciar ANTES do frontend** para processar jobs
+3. **Verificação de serviços evita erros** em cascata na inicialização
+4. **URL do frontend mudou** de 5173 para 3000 (Vite default)
+
+---
+
+### 🎯 PRÓXIMAS MELHORIAS
+
+- [ ] Adicionar ícones de status no script (✅ ❌)
+- [ ] Notificação desktop quando sistema estiver pronto
+- [ ] Script de parada elegante (graceful shutdown)
+- [ ] Health check mais robusto com retries
