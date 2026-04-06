@@ -25,47 +25,58 @@
 
 /* Spotify Player */
 .spotify-player {
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  padding: 20px;
+  background: #fff;
+  padding: 16px;
+  border-bottom: 1px solid #e5e7eb;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+}
+
+.player-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 300px;
 }
 
 .player-artwork {
-  width: 120px;
-  height: 120px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
+  width: 56px;
+  height: 56px;
+  background: #f3f4f6;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  flex-shrink: 0;
 }
 
 .artwork-icon {
-  font-size: 48px;
+  font-size: 28px;
 }
 
 .player-info {
-  text-align: center;
+  text-align: left;
+  flex: 1;
+  min-width: 0;
 }
 
 .player-title {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
-  color: #fff;
+  color: #1a1a1a;
   margin-bottom: 4px;
-  max-width: 250px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .player-subtitle {
-  font-size: 13px;
-  color: #b0b0b0;
+  font-size: 12px;
+  color: #6b7280;
 }
 
 /* Progress Bar */
@@ -76,10 +87,10 @@
 
 .progress-bar {
   width: 100%;
-  height: 4px;
+  height: 3px;
   -webkit-appearance: none;
   appearance: none;
-  background: #404040;
+  background: #e5e7eb;
   border-radius: 2px;
   cursor: pointer;
 }
@@ -87,9 +98,9 @@
 .progress-bar::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 12px;
-  height: 12px;
-  background: #fff;
+  width: 10px;
+  height: 10px;
+  background: #1a1a1a;
   border-radius: 50%;
   cursor: pointer;
 }
@@ -98,7 +109,7 @@
   display: flex;
   justify-content: space-between;
   font-size: 11px;
-  color: #b0b0b0;
+  color: #9ca3af;
   margin-top: 4px;
 }
 
@@ -121,30 +132,31 @@
 }
 
 .skip-btn {
-  font-size: 20px;
-  color: #b0b0b0;
+  font-size: 16px;
+  color: #9ca3af;
 }
 
 .skip-btn:hover {
-  color: #fff;
+  color: #1a1a1a;
 }
 
 .play-btn {
-  width: 48px;
-  height: 48px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  width: 36px;
+  height: 36px;
+  background: #1a1a1a;
   border-radius: 50%;
-  font-size: 20px;
+  font-size: 14px;
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: none;
 }
 
 .play-btn:hover {
+  background: #333;
   transform: scale(1.05);
-  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5);
+  box-shadow: none;
 }
 
 /* Secondary Controls */
@@ -164,22 +176,22 @@
 .speed-btn {
   padding: 4px 8px;
   background: transparent;
-  border: 1px solid #404040;
+  border: 1px solid #e5e7eb;
   border-radius: 4px;
   font-size: 10px;
-  color: #b0b0b0;
+  color: #6b7280;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .speed-btn:hover {
-  border-color: #667eea;
-  color: #fff;
+  border-color: #1a1a1a;
+  color: #1a1a1a;
 }
 
 .speed-btn.active {
-  background: #667eea;
-  border-color: #667eea;
+  background: #1a1a1a;
+  border-color: #1a1a1a;
   color: #fff;
 }
 
@@ -188,7 +200,7 @@
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  color: #b0b0b0;
+  color: #6b7280;
 }
 
 .volume-slider {
@@ -196,7 +208,7 @@
   height: 4px;
   -webkit-appearance: none;
   appearance: none;
-  background: #404040;
+  background: #e5e7eb;
   border-radius: 2px;
   cursor: pointer;
 }
@@ -206,7 +218,7 @@
   appearance: none;
   width: 10px;
   height: 10px;
-  background: #fff;
+  background: #1a1a1a;
   border-radius: 50%;
   cursor: pointer;
 }
@@ -216,13 +228,13 @@
   width: 100%;
   max-width: 300px;
   margin-top: 8px;
-  border-top: 1px solid #333;
+  border-top: 1px solid #e5e7eb;
   padding-top: 12px;
 }
 
 .episode-list-header {
   font-size: 11px;
-  color: #b0b0b0;
+  color: #6b7280;
   text-transform: uppercase;
   letter-spacing: 1px;
   margin-bottom: 8px;
@@ -239,25 +251,25 @@
 }
 
 .episode-item:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: #f9fafb;
 }
 
 .episode-item.active {
-  background: rgba(102, 126, 234, 0.3);
-  border-left: 3px solid #667eea;
+  background: #f0f0f0;
+  border-left: 3px solid #1a1a1a;
 }
 
 .ep-number {
   font-size: 12px;
   font-weight: 600;
-  color: #667eea;
+  color: #1a1a1a;
   min-width: 35px;
 }
 
 .ep-title {
   flex: 1;
   font-size: 12px;
-  color: #e0e0e0;
+  color: #374151;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -265,12 +277,12 @@
 
 .ep-duration {
   font-size: 11px;
-  color: #b0b0b0;
+  color: #9ca3af;
 }
 
 .ep-download {
   font-size: 14px;
-  color: #b0b0b0;
+  color: #9ca3af;
   text-decoration: none;
   padding: 4px 8px;
   border-radius: 4px;
@@ -278,8 +290,8 @@
 }
 
 .ep-download:hover {
-  color: #667eea;
-  background: rgba(102, 126, 234, 0.2);
+  color: #1a1a1a;
+  background: #f3f4f6;
 }
 
 /* Download Section */
@@ -292,20 +304,21 @@
 .download-all-btn {
   display: block;
   width: 100%;
-  padding: 12px;
+  padding: 10px;
   text-align: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #1a1a1a;
   color: #fff;
   text-decoration: none;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  transition: transform 0.2s, box-shadow 0.2s;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.15s;
 }
 
 .download-all-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  background: #333;
+  transform: none;
+  box-shadow: none;
 }
 
 /* Empty Player */
@@ -356,7 +369,7 @@
 }
 
 .search-input:focus {
-  border-color: #667eea;
+  border-color: #1a1a1a;
   outline: none;
 }
 
@@ -376,8 +389,8 @@
 }
 
 .filter-btn.active {
-  background: #667eea;
-  border-color: #667eea;
+  background: #1a1a1a;
+  border-color: #1a1a1a;
   color: #fff;
 }
 
@@ -387,6 +400,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
 }
 
 .history-header {
@@ -412,6 +426,7 @@
 .history-list {
   flex: 1;
   overflow-y: auto;
+  min-height: 0;
 }
 
 .history-empty {
@@ -434,7 +449,7 @@
 
 .history-item.active {
   background: rgba(102, 126, 234, 0.1);
-  border-left: 3px solid #667eea;
+  border-left: 3px solid #1a1a1a;
 }
 
 .history-item-row {
@@ -464,8 +479,8 @@
 
 .multi-badge {
   font-size: 10px;
-  background: #667eea;
-  color: #fff;
+  background: #e5e7eb;
+  color: #374151;
   padding: 2px 6px;
   border-radius: 4px;
   flex-shrink: 0;
@@ -544,6 +559,8 @@
   flex-direction: column;
   gap: 2px;
   border-top: 1px solid var(--border-default);
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .history-episode-item {
@@ -566,11 +583,12 @@
   min-width: 40px;
   height: 22px;
   border-radius: 5px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: #f3f4f6;
+  color: #374151;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   flex-shrink: 0;
+  border: 1px solid #e5e7eb;
 }
 
 .history-ep-title {
@@ -595,23 +613,23 @@
 }
 
 .history-ep-play {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #667eea;
+  background: #1a1a1a;
   border: none;
   border-radius: 50%;
   color: #fff;
-  font-size: 10px;
+  font-size: 8px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .history-ep-play:hover {
-  background: #764ba2;
-  transform: scale(1.1);
+  background: #333;
+  transform: scale(1.05);
 }
 
 .history-ep-download {
@@ -630,8 +648,8 @@
 }
 
 .history-ep-download:hover {
-  color: #667eea;
-  border-color: #667eea;
+  color: #1a1a1a;
+  border-color: #1a1a1a;
 }
 
 .expand-arrow {

@@ -235,16 +235,18 @@ function PlayerPanel() {
         <div className="spotify-player">
           <audio ref={audioRef} src={audioUrl} preload="metadata" />
           
-          <div className="player-artwork">
-            <div className="artwork-icon">🎙️</div>
-          </div>
-          
-          <div className="player-info">
-            <div className="player-title">{currentJob.title}</div>
-            <div className="player-subtitle">
-              {episodesMeta.length > 0 
-                ? `${episodesMeta.length} episódios`
-                : formatDuration(currentJob.duration_seconds)}
+          <div className="player-top">
+            <div className="player-artwork">
+              <div className="artwork-icon">🎙️</div>
+            </div>
+            
+            <div className="player-info">
+              <div className="player-title">{currentJob.title}</div>
+              <div className="player-subtitle">
+                {episodesMeta.length > 0 
+                  ? `${episodesMeta.length} episódios`
+                  : formatDuration(currentJob.duration_seconds)}
+              </div>
             </div>
           </div>
 
