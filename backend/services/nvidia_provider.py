@@ -16,7 +16,7 @@ from jinja2 import Template
 
 from jinja2 import Template
 
-from backend.prompts.script_template_v7 import (
+from backend.prompts.script_template_v8 import (
     SYSTEM_PROMPT_TEMPLATE,
     USER_PROMPT_TEMPLATE,
 )
@@ -32,8 +32,8 @@ from backend.services.nvidia_router import get_nvidia_router
 logger = logging.getLogger(__name__)
 
 # Templates Jinja2
-SYSTEM_PROMPT_V7_TEMPLATE = Template(SYSTEM_PROMPT_TEMPLATE)
-USER_PROMPT_V7_TEMPLATE = Template(USER_PROMPT_TEMPLATE)
+SYSTEM_PROMPT_V8_TEMPLATE = Template(SYSTEM_PROMPT_TEMPLATE)
+USER_PROMPT_V8_TEMPLATE = Template(USER_PROMPT_TEMPLATE)
 
 
 class NVIDIABaseProvider(LLMProvider):
@@ -72,9 +72,9 @@ class NVIDIABaseProvider(LLMProvider):
         )
         config_vars.update(variacoes)
 
-        system_prompt = SYSTEM_PROMPT_V7_TEMPLATE.render(**config_vars)
+        system_prompt = SYSTEM_PROMPT_V8_TEMPLATE.render(**config_vars)
 
-        user_prompt = USER_PROMPT_V7_TEMPLATE.render(
+        user_prompt = USER_PROMPT_V8_TEMPLATE.render(
             text=text[:15000],
             target_duration=config.get("target_duration", 10),
             depth_level=config.get("depth_level", "normal"),

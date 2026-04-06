@@ -11,14 +11,14 @@ import redis
 from jinja2 import Template
 from pydantic import BaseModel, ValidationError, field_validator
 
-from backend.prompts.script_template_v7 import (
-    SYSTEM_PROMPT_TEMPLATE as SYSTEM_PROMPT_TEMPLATE_V7,
-    USER_PROMPT_TEMPLATE as USER_PROMPT_TEMPLATE_V7,
+from backend.prompts.script_template_v8 import (
+    SYSTEM_PROMPT_TEMPLATE as SYSTEM_PROMPT_TEMPLATE_V8,
+    USER_PROMPT_TEMPLATE as USER_PROMPT_TEMPLATE_V8,
 )
 from backend.prompts.prompt_variator import gerar_variacoes
 
-SYSTEM_PROMPT_V7 = Template(SYSTEM_PROMPT_TEMPLATE_V7)
-USER_PROMPT_V7 = Template(USER_PROMPT_TEMPLATE_V7)
+SYSTEM_PROMPT_V8 = Template(SYSTEM_PROMPT_TEMPLATE_V8)
+USER_PROMPT_V8 = Template(USER_PROMPT_TEMPLATE_V8)
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
@@ -320,9 +320,9 @@ class GeminiProvider(LLMProvider):
 
         for attempt in range(3):
             try:
-                system_prompt = SYSTEM_PROMPT_V7.render(**config_vars)
+                system_prompt = SYSTEM_PROMPT_V8.render(**config_vars)
 
-                user_prompt = USER_PROMPT_V7.render(
+                user_prompt = USER_PROMPT_V8.render(
                     text=text[:15000],
                     target_duration=config.get("target_duration", 10),
                     depth_level=config.get("depth_level", "normal"),
@@ -457,9 +457,9 @@ class GLMProvider(LLMProvider):
 
         for attempt in range(3):
             try:
-                system_prompt = SYSTEM_PROMPT_V7.render(**config_vars)
+                system_prompt = SYSTEM_PROMPT_V8.render(**config_vars)
 
-                user_prompt = USER_PROMPT_V7.render(
+                user_prompt = USER_PROMPT_V8.render(
                     text=text[:15000],
                     target_duration=config.get("target_duration", 10),
                     depth_level=config.get("depth_level", "normal"),
