@@ -1,12 +1,14 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import useJobStore from '../store/jobStore';
 import './ScriptPanel.css';
 
 function ScriptPanel({ onGenerateAudio }) {
-  const { currentJob } = useJobStore();
+  const { currentJob, setCurrentJob } = useJobStore();
   const [saving, setSaving] = useState(false);
   const [expandedEpisode, setExpandedEpisode] = useState(null);
+  const [editedScripts, setEditedScripts] = useState([]);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const { scripts, totalSegments, totalWords, estimatedMinutes } = useMemo(() => {
     let scripts = [];
@@ -34,6 +36,23 @@ function ScriptPanel({ onGenerateAudio }) {
     return { scripts, totalSegments, totalWords, estimatedMinutes: Math.ceil(totalWords / 140) };
   }, [currentJob?.script_json]);
 
+  // Sync editedScripts whenever the canonical scripts change (new job loaded)
+  useEffect(() => {
+    setEditedScripts(JSON.parse(JSON.stringify(scripts)));
+    setHasUnsavedChanges(false);
+  }, [currentJob?.script_json]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleTextChange = useCallback((episodeIdx, segIdx, newText) => {
+    setEditedScripts(prev => prev.map((ep, i) => {
+      if (i !== episodeIdx) return ep;
+      return {
+        ...ep,
+        segments: (ep.segments || []).map((s, j) => j === segIdx ? { ...s, text: newText } : s),
+      };
+    }));
+    setHasUnsavedChanges(true);
+  }, []);
+
   const hasScript = scripts.length > 0;
   const hasAudio = currentJob?.status === 'DONE' && currentJob?.audio_path;
   const isTtsProcessing = currentJob?.status === 'TTS_PROCESSING';
@@ -54,20 +73,22 @@ function ScriptPanel({ onGenerateAudio }) {
     if (!currentJob?.id) return;
     setSaving(true);
     try {
-      const scriptData = scripts.length === 1 ? scripts[0] : scripts;
+      const scriptData = editedScripts.length === 1 ? editedScripts[0] : editedScripts;
       await axios.put(`http://localhost:8000/jobs/${currentJob.id}/script`, {
         script_json: JSON.stringify(scriptData),
       });
+      setCurrentJob({ ...currentJob, script_json: JSON.stringify(scriptData) });
+      setHasUnsavedChanges(false);
     } catch (error) {
       console.error('Erro ao salvar:', error);
     } finally {
       setSaving(false);
     }
-  }, [currentJob?.id, scripts]);
+  }, [currentJob, editedScripts, setCurrentJob]);
 
   const handleExport = useCallback(() => {
     let md = '';
-    scripts.forEach((script, idx) => {
+    editedScripts.forEach((script, idx) => {
       const title = script?.section_title || script?.title || `Episódio ${idx + 1}`;
       md += `# ${title}\n\n`;
       (script?.segments || []).forEach(seg => {
@@ -81,7 +102,7 @@ function ScriptPanel({ onGenerateAudio }) {
     a.href = url;
     a.download = 'roteiro.md';
     a.click();
-  }, [scripts]);
+  }, [editedScripts]);
 
   if (!hasScript) {
     return (
@@ -108,8 +129,8 @@ function ScriptPanel({ onGenerateAudio }) {
           <button className="btn btn-outline" onClick={handleExport}>
             📄 Exportar
           </button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-            {saving ? 'Salvando...' : '💾 Salvar'}
+          <button className={`btn btn-primary${hasUnsavedChanges ? ' btn-unsaved' : ''}`} onClick={handleSave} disabled={saving}>
+            {saving ? 'Salvando...' : hasUnsavedChanges ? '💾 Salvar *' : '💾 Salvar'}
           </button>
           {!hasAudio && (
             <button
@@ -174,7 +195,7 @@ function ScriptPanel({ onGenerateAudio }) {
 
               {isExpanded && (
                 <div className="episode-content">
-                  {segments.map((seg, segIdx) => {
+                  {(editedScripts[idx]?.segments || segments).map((seg, segIdx) => {
                     const speakerLower = (seg.speaker || '').toLowerCase();
                     const isNarrator = speakerLower.includes('narrad');
                     const isWilliam = speakerLower.includes('host') || speakerLower.includes('william');
@@ -184,7 +205,13 @@ function ScriptPanel({ onGenerateAudio }) {
                         <span className="segment-speaker">
                           {getSpeakerName(seg.speaker)}
                         </span>
-                        <p className="segment-text">{seg.text}</p>
+                        <textarea
+                          className="segment-text"
+                          value={editedScripts[idx]?.segments?.[segIdx]?.text ?? seg.text}
+                          onChange={(e) => handleTextChange(idx, segIdx, e.target.value)}
+                          rows={2}
+                          aria-label={`Editar fala ${segIdx + 1} de ${getSpeakerName(seg.speaker)}`}
+                        />
                       </div>
                     );
                   })}
