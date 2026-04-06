@@ -17,6 +17,20 @@ function PlayerPanel() {
   const [activeEpisode, setActiveEpisode] = useState(null);
   const audioRef = useRef(null);
 
+  const [expandedHistoryJobs, setExpandedHistoryJobs] = useState(new Set());
+
+  const toggleHistoryJob = useCallback((jobId) => {
+    setExpandedHistoryJobs(prev => {
+      const next = new Set(prev);
+      if (next.has(jobId)) {
+        next.delete(jobId);
+      } else {
+        next.add(jobId);
+      }
+      return next;
+    });
+  }, []);
+
   const episodesMeta = useMemo(() => {
     if (!currentJob?.episodes_meta) return [];
     try {
@@ -37,15 +51,33 @@ function PlayerPanel() {
 
   const downloadUrl = currentJob?.id ? `${API_BASE}/download/${currentJob.id}` : null;
 
-  const getEpisodeAudioUrl = (epNum) => {
-    if (!currentJob?.id) return null;
-    return `${API_BASE}/audio/${currentJob.id}/ep_${String(epNum).padStart(2, '0')}/final.mp3`;
+  const getEpisodeAudioUrl = (epNum, jobId = currentJob?.id) => {
+    if (!jobId) return null;
+    return `${API_BASE}/audio/${jobId}/ep_${String(epNum).padStart(2, '0')}/final.mp3`;
   };
 
-  const getEpisodeDownloadUrl = (epNum) => {
-    if (!currentJob?.id) return null;
-    return `${API_BASE}/download/${currentJob.id}/episode/${epNum}`;
+  const getEpisodeDownloadUrl = (epNum, jobId = currentJob?.id) => {
+    if (!jobId) return null;
+    return `${API_BASE}/download/${jobId}/episode/${epNum}`;
   };
+
+  const loadJobAndPlayEpisode = useCallback(async (jobId, epNum) => {
+    try {
+      const response = await axios.get(`${API_BASE}/jobs/${jobId}`);
+      setCurrentJob(response.data);
+      setCurrentJobId(jobId);
+      setCurrentTime(0);
+      const url = `${API_BASE}/audio/${jobId}/ep_${String(epNum).padStart(2, '0')}/final.mp3`;
+      if (audioRef.current) {
+        setActiveEpisode(epNum);
+        audioRef.current.src = url;
+        audioRef.current.load();
+        audioRef.current.play().catch(err => console.error('Play episode error:', err));
+      }
+    } catch (error) {
+      console.error('Erro ao carregar job:', error);
+    }
+  }, [setCurrentJob, setCurrentJobId]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -348,41 +380,75 @@ function PlayerPanel() {
                   : job.episodes_meta) 
                 : [];
               const isMulti = jobEpsMeta.length > 1;
+              const isExpanded = expandedHistoryJobs.has(job.id);
               
               return (
                 <div 
                   key={job.id} 
                   className={`history-item ${currentJob?.id === job.id ? 'active' : ''}`}
                 >
-                  <div className="history-item-main" onClick={() => handlePlayJob(job.id)}>
-                    <div className="history-item-title">
-                      {job.is_favorite && <span className="favorite-star">⭐</span>}
-                      {job.title}
-                      {isMulti && <span className="multi-badge">{jobEpsMeta.length} eps</span>}
+                  <div className="history-item-row">
+                    <div className="history-item-main" onClick={() => isMulti ? toggleHistoryJob(job.id) : handlePlayJob(job.id)}>
+                      <div className="history-item-title">
+                        {job.is_favorite && <span className="favorite-star">⭐</span>}
+                        {job.title}
+                        {isMulti && <span className="multi-badge">{jobEpsMeta.length} eps</span>}
+                      </div>
+                      <div className="history-item-meta">
+                        <span className={`status-badge ${job.status.toLowerCase()}`}>
+                          {job.status === 'DONE' ? '🟢' : job.status === 'FAILED' ? '🔴' : '🟡'}
+                        </span>
+                        {job.duration_seconds && (
+                          <span>{formatDuration(job.duration_seconds)}</span>
+                        )}
+                        {isMulti && <span className="expand-arrow">{isExpanded ? '▲' : '▼'}</span>}
+                      </div>
                     </div>
-                    <div className="history-item-meta">
-                      <span className={`status-badge ${job.status.toLowerCase()}`}>
-                        {job.status === 'DONE' ? '🟢' : job.status === 'FAILED' ? '🔴' : '🟡'}
-                      </span>
-                      {job.duration_seconds && (
-                        <span>{formatDuration(job.duration_seconds)}</span>
-                      )}
+                    <div className="history-item-actions">
+                      <button 
+                        className={`fav-btn ${job.is_favorite ? 'favorited' : ''}`}
+                        onClick={() => handleToggleFavorite(job.id, job.is_favorite)}
+                      >
+                        {job.is_favorite ? '❤️' : '🤍'}
+                      </button>
+                      <button 
+                        className="history-delete"
+                        onClick={() => handleDeleteJob(job.id)}
+                      >
+                        🗑
+                      </button>
                     </div>
                   </div>
-                  <div className="history-item-actions">
-                    <button 
-                      className={`fav-btn ${job.is_favorite ? 'favorited' : ''}`}
-                      onClick={() => handleToggleFavorite(job.id, job.is_favorite)}
-                    >
-                      {job.is_favorite ? '❤️' : '🤍'}
-                    </button>
-                    <button 
-                      className="history-delete"
-                      onClick={() => handleDeleteJob(job.id)}
-                    >
-                      🗑
-                    </button>
-                  </div>
+
+                  {isMulti && isExpanded && (
+                    <div className="history-episodes">
+                      {jobEpsMeta.map((ep) => (
+                        <div key={ep.episode_number} className="history-episode-item">
+                          <span className="history-ep-badge">EP {ep.episode_number}</span>
+                          <span className="history-ep-title">{ep.title}</span>
+                          <span className="history-ep-duration">{formatDuration(ep.duration_seconds)}</span>
+                          <div className="history-ep-actions">
+                            <button
+                              className="history-ep-play"
+                              onClick={() => loadJobAndPlayEpisode(job.id, ep.episode_number)}
+                              title="Reproduzir episódio"
+                            >
+                              ▶
+                            </button>
+                            <a
+                              href={`${API_BASE}/download/${job.id}/episode/${ep.episode_number}`}
+                              className="history-ep-download"
+                              onClick={(e) => e.stopPropagation()}
+                              download
+                              title="Baixar episódio"
+                            >
+                              ⬇
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })
